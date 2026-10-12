@@ -138,13 +138,13 @@ public:
 	uint8_t* base() const { return mem_; }
 
 	// Append `blr`, flush caches, flip the page to read+execute and return it
-	// as a callable of type Fn.
+	// as a callable of type Fn. The flush goes through the backend's own
+	// routine: GCC's __builtin___clear_cache is a no-op on ppc64le.
 	template <typename Fn>
 	Fn seal()
 	{
 		cache_addd(PpcBlr);
-		__builtin___clear_cache(reinterpret_cast<char*>(mem_),
-		                        reinterpret_cast<char*>(cache.pos));
+		cache_block_closing(mem_, static_cast<Bitu>(cache.pos - mem_));
 		EXPECT_EQ(mprotect(mem_, kSize, PROT_READ | PROT_EXEC), 0);
 		return reinterpret_cast<Fn>(mem_);
 	}
@@ -179,6 +179,14 @@ uint32_t emit_mov_dword(uint32_t imm)
 	JitPage page;
 	gen_mov_dword_to_reg_imm(HOST_R3, imm);
 	return page.seal<uint32_t (*)()>()();
+}
+
+// Emit `gen_load_param_imm(imm, 0)` and return the full 64-bit r3.
+uint64_t emit_load_param_imm(uint32_t imm)
+{
+	JitPage page;
+	gen_load_param_imm(imm, 0);
+	return page.seal<uint64_t (*)()>()();
 }
 
 // Emit `gen_add_imm(r3, imm)` and run it on `base` -> r3.
@@ -217,8 +225,7 @@ uint32_t emit_op(unsigned flags_type, uint32_t op1, uint32_t op2)
 	// gen_fill_function_ptr writes at most 7 words (op[0..6]); terminate.
 	reinterpret_cast<uint32_t*>(page.base())[7] = PpcBlr;
 	cache.pos = page.base() + 8 * sizeof(uint32_t);
-	__builtin___clear_cache(reinterpret_cast<char*>(page.base()),
-	                        reinterpret_cast<char*>(cache.pos));
+	cache_block_closing(page.base(), 8 * sizeof(uint32_t));
 	EXPECT_EQ(mprotect(page.base(), 4096, PROT_READ | PROT_EXEC), 0);
 	auto fn = reinterpret_cast<uint32_t (*)(uint32_t, uint32_t)>(page.base());
 	return fn(op1, op2);
@@ -232,8 +239,7 @@ uint32_t emit_op3(unsigned flags_type, uint32_t op1, uint32_t op2, uint32_t op3)
 	gen_fill_function_ptr(page.base(), &dummy, flags_type);
 	reinterpret_cast<uint32_t*>(page.base())[7] = PpcBlr;
 	cache.pos = page.base() + 8 * sizeof(uint32_t);
-	__builtin___clear_cache(reinterpret_cast<char*>(page.base()),
-	                        reinterpret_cast<char*>(cache.pos));
+	cache_block_closing(page.base(), 8 * sizeof(uint32_t));
 	EXPECT_EQ(mprotect(page.base(), 4096, PROT_READ | PROT_EXEC), 0);
 	auto fn = reinterpret_cast<uint32_t (*)(uint32_t, uint32_t, uint32_t)>(page.base());
 	return fn(op1, op2, op3);
@@ -318,6 +324,19 @@ TEST(DynrecPpc64le, MovDwordToRegImm)
 	};
 	for (uint32_t v : vals)
 		EXPECT_EQ(emit_mov_dword(v), v) << "imm=" << std::hex << v;
+}
+
+// ELFv2 makes the caller extend integer arguments narrower than 64 bits and
+// GCC callees count on it. The helpers take unsigned arguments, so a 32-bit
+// immediate argument must arrive zero-extended even though li/lis/pli
+// sign-extend.
+TEST(DynrecPpc64le, LoadParamImmIsZeroExtended)
+{
+	const uint32_t vals[] = {0x0, 0x7FFF, 0x8000, 0xFFFF, 0x7FFFFFFF,
+	                         0x80000000, 0xFFFF0000, 0xDEADBEEF, 0xFFFFFFFF};
+	for (uint32_t v : vals)
+		EXPECT_EQ(emit_load_param_imm(v), static_cast<uint64_t>(v))
+		        << "imm=" << std::hex << v;
 }
 
 // 32-bit immediate add: paddi fast path (POWER10) vs addis/addi, plus the
