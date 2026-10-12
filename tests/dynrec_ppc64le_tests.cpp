@@ -26,6 +26,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <memory>
 
 #include <sys/auxv.h>
 #include <sys/mman.h>
@@ -498,6 +499,176 @@ void emit_epilog()
 	IMM_OP(14, HOST_R1, HOST_R1, kFrameBytes);      // addi r1, r1, 96
 	DSF_OP(58, HOST_R0, HOST_R1, 16, 0);            // ld r0, 16(r1)
 	EXT_OP(HOST_R0, 8, 0, 467, 0);                  // mtlr r0
+}
+
+bool is_addis_off_r31(uint32_t w)
+{
+	return (w >> 26) == 15 && ((w >> 16) & 31) == HOST_R31;
+}
+
+// Call target. Returns r12 as seen on entry: the ELFv2 global entry point
+// derives the TOC pointer from it, so a caller that fails to set it breaks
+// every TOC-relative access in the callee (the globals below included).
+uint32_t probe_calls = 0;
+uint32_t probe_sum   = 0;
+
+__attribute__((noinline)) uint64_t probe(uint32_t a, uint32_t b)
+{
+	uint64_t r12;
+	asm volatile("mr %0, 12" : "=r"(r12));
+	++probe_calls;
+	probe_sum = a + b;
+	return r12;
+}
+
+// A block-like struct with the two fields gen_jmp_ptr dereferences: a link
+// slot holding the target block, and the target's code start.
+struct FakeBlock {
+	const uint8_t* start = nullptr;
+	FakeBlock* link_to[2] = {};
+};
+
+// gen_jmp_ptr fetches the link slot through r27 (the current block), so the
+// whole block exit is ld/ld/mtctr/bctr regardless of where the block lives.
+TEST(DynrecPpc64le, JmpPtrLoadsLinkSlotOffBlockRegister)
+{
+	JitPage page;
+	FakeBlock block, target;
+	block.link_to[0] = &target;
+	uint64_t running = 0; // stand-in for cache.block.running
+
+	emit_prolog();
+	gen_mov_direct_ptr(&running, reinterpret_cast<Bitu>(&block)); // r27 = &block
+	uint8_t* const jmp_start = cache.pos;
+	gen_jmp_ptr(&block.link_to[0], offsetof(FakeBlock, start));
+	EXPECT_EQ(cache.pos - jmp_start, 4 * 4) << "expected ld/ld/mtctr/bctr";
+
+	// landing pad: the "target block"
+	target.start = cache.pos;
+	IMM_OP(14, HOST_R3, 0, 42); // li r3, 42
+	emit_epilog();
+
+	EXPECT_EQ(page.seal<uint32_t (*)()>()(), 42u);
+	EXPECT_EQ(running, reinterpret_cast<uint64_t>(&block));
+}
+
+// Far call (the test binary is ~128 TB from an mmap'd page): r12 is formed
+// off r31 and the call goes through CTR; the stanza keeps its patchable size.
+TEST(DynrecPpc64le, CallStanzaAnchorRelative)
+{
+	JitPage page;
+	emit_prolog();
+	IMM_OP(14, HOST_R3, 0, 40);
+	IMM_OP(14, HOST_R4, 0, 2);
+	uint8_t* const stanza = cache.pos;
+	gen_call_function_raw(reinterpret_cast<void*>(&probe));
+	EXPECT_EQ(cache.pos - stanza, call_stanza_words * 4);
+	EXPECT_TRUE(is_addis_off_r31(*reinterpret_cast<uint32_t*>(stanza)));
+	emit_epilog();
+
+	probe_calls = 0;
+	const uint64_t r12 = page.seal<uint64_t (*)()>()();
+	EXPECT_EQ(r12, reinterpret_cast<uint64_t>(&probe));
+	EXPECT_EQ(probe_calls, 1u);
+	EXPECT_EQ(probe_sum, 42u);
+}
+
+// Near call: a page placed within bl range of the test binary must still
+// set r12 before the bl. Skipped if that address range is in use.
+TEST(DynrecPpc64le, CallStanzaNearSetsR12)
+{
+	// bl reaches +/-32 MB; try a few spots around the binary
+	const auto func = reinterpret_cast<uintptr_t>(&probe);
+	std::unique_ptr<JitPage> page;
+	for (intptr_t delta : {-0x01F00000, 0x01F00000, -0x01000000, 0x01000000}) {
+		const uintptr_t hint = (func + delta) & ~uintptr_t{0xFFFF};
+		page = std::make_unique<JitPage>(reinterpret_cast<void*>(hint));
+		if (page->ok())
+			break;
+	}
+	if (!page->ok())
+		GTEST_SKIP() << "no free page within bl range of the test binary";
+
+	emit_prolog();
+	IMM_OP(14, HOST_R3, 0, 1);
+	IMM_OP(14, HOST_R4, 0, 2);
+	uint8_t* const stanza = cache.pos;
+	gen_call_function_raw(reinterpret_cast<void*>(&probe));
+	EXPECT_EQ(cache.pos - stanza, call_stanza_words * 4);
+	const auto* w = reinterpret_cast<uint32_t*>(stanza);
+	EXPECT_TRUE(is_addis_off_r31(w[0]));
+	EXPECT_EQ(w[2] & 0xFC000003u, 0x48000001u) << "expected bl";
+	emit_epilog();
+
+	probe_calls = 0;
+	EXPECT_EQ(page->seal<uint64_t (*)()>()(), reinterpret_cast<uint64_t>(&probe));
+	EXPECT_EQ(probe_calls, 1u);
+	EXPECT_EQ(probe_sum, 3u);
+}
+
+// The get_CF trampoline tail-jumps into C; it must set r12 like a call does.
+TEST(DynrecPpc64le, JmpCFunctionSetsR12)
+{
+	JitPage page;
+	emit_prolog();
+	IMM_OP(14, HOST_R3, 0, 5);
+	IMM_OP(14, HOST_R4, 0, 6);
+	uint8_t* const bl_pos = cache.pos;
+	cache_addd(0); // bl trampoline, patched below
+	emit_epilog();
+	cache_addd(PpcBlr);
+	const uint8_t* const trampoline = cache.pos;
+	gen_jmp_c_function(reinterpret_cast<const void*>(&probe));
+	*reinterpret_cast<uint32_t*>(bl_pos) =
+	        0x48000001u | ((trampoline - bl_pos) & 0x03FFFFFCu);
+
+	// seal() appends one more (unreachable) blr after the trampoline
+	probe_calls = 0;
+	EXPECT_EQ(page.seal<uint64_t (*)()>()(), reinterpret_cast<uint64_t>(&probe));
+	EXPECT_EQ(probe_calls, 1u);
+	EXPECT_EQ(probe_sum, 11u);
+}
+
+// Pick an element at least 64 KiB from every 16-bit anchor so gen_addr has to
+// take the anchor-relative (addis off r31) path.
+uint32_t far_data[1 << 17];
+
+uint32_t* pick_far_element()
+{
+	const uintptr_t anchors[] = {reinterpret_cast<uintptr_t>(&Segs),
+	                             reinterpret_cast<uintptr_t>(&cpu_regs),
+	                             reinterpret_cast<uintptr_t>(&fpu)};
+	for (uint32_t& e : far_data) {
+		const auto a = reinterpret_cast<uintptr_t>(&e);
+		bool far     = true;
+		for (uintptr_t anchor : anchors)
+			far = far && (a > anchor ? a - anchor : anchor - a) >= 0x10000;
+		if (far)
+			return &e;
+	}
+	return nullptr;
+}
+
+TEST(DynrecPpc64le, AnchorRelativeGlobalLoadStore)
+{
+	uint32_t* const far = pick_far_element();
+	ASSERT_NE(far, nullptr);
+	*far = 0xCAFEF00D;
+
+	JitPage page;
+	emit_prolog();
+	uint8_t* const load_start = cache.pos;
+	gen_mov_word_to_reg(HOST_R3, far, true);
+	EXPECT_EQ(cache.pos - load_start, 2 * 4) << "expected addis + lwz";
+	EXPECT_TRUE(is_addis_off_r31(*reinterpret_cast<uint32_t*>(load_start)));
+	gen_mov_dword_to_reg_imm(HOST_R4, 0x12345678);
+	uint8_t* const store_start = cache.pos;
+	gen_mov_word_from_reg(HOST_R4, far + 1, true);
+	EXPECT_EQ(cache.pos - store_start, 2 * 4) << "expected addis + stw";
+	emit_epilog();
+
+	EXPECT_EQ(page.seal<uint32_t (*)()>()(), 0xCAFEF00Du);
+	EXPECT_EQ(far[1], 0x12345678u);
 }
 
 // An absolute address below 4 GiB with bit 31 set: lis sign-extends, so the
