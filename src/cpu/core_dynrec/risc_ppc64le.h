@@ -19,10 +19,6 @@ static const bool drc_isa31 = [] {
 	return (getauxval(AT_HWCAP2) & kArch31) != 0;
 }();
 
-// debugging
-#define __ASSERT(x,...) \
-    { if(!(x)) { fprintf(stderr, "ASSERT:" __VA_ARGS__); asm("trap\n"); } }
-
 // some configuring defines that specify the capabilities of this architecture
 // or aspects of the recompiling
 
@@ -675,6 +671,12 @@ static inline const uint8_t* gen_call_function_setup(void *func,
 static void inline gen_load_param_imm(Bitu imm, Bitu param)
 {
 	gen_mov_dword_to_reg_imm(RegParams[param], imm);
+	// The ELFv2 ABI has the caller extend sub-doubleword integer arguments
+	// to 64 bits and GCC callees rely on it (they index and add with the
+	// whole register). The helpers take unsigned arguments, so undo the
+	// sign extension of li/lis/pli, as x86-64's 32-bit mov would.
+	if (imm & 0x80000000)
+		RLD_OP(30, RegParams[param], RegParams[param], 0, 32, 0, 0); // clrldi
 }
 
 // load an address as param'th function parameter
@@ -785,27 +787,24 @@ static void gen_fill_branch_long(const uint8_t* data)
 	return gen_fill_branch(data);
 }
 
+// Make freshly written code visible to instruction fetch. This is the only
+// instruction cache maintenance the dynrec gets on ppc64le: GCC's
+// __builtin___clear_cache (used by dyn_cache_invalidate) compiles to nothing
+// on PowerPC. The sequence is the one the kernel's flush_icache_range uses.
 static void cache_block_closing(const uint8_t *block_start, Bitu block_size)
 {
-	// in the Linux kernel i-cache and d-cache are flushed separately
-	// there's probably a good reason for this ...
-	uint8_t* dstart = (uint8_t*)((uint64_t)block_start & -128);
-	uint8_t* istart = dstart;
+	// cache line size for POWER4 and up is 128 bytes
+	constexpr uint64_t line = 128;
+	const uint8_t* const end = block_start + block_size;
+	const uint8_t* start = (const uint8_t*)((uint64_t)block_start & -line);
 
-	while (dstart < block_start + block_size)
-	{
-		asm volatile("dcbf %y0" :: "Z"(*dstart));
-		// cache line size for POWER4 and up is 128 bytes
-		dstart += 128;
-	}
-	asm volatile("sync");
-
-	while (istart < block_start + block_size)
-	{
-		asm volatile("icbi %y0" :: "Z"(*istart));
-		istart += 128;
-	}
-	asm volatile("isync");
+	for (const uint8_t* p = start; p < end; p += line)
+		asm volatile("dcbst %y0" :: "Z"(*p)); // write the data cache back
+	asm volatile("sync");                      // ... before invalidating
+	for (const uint8_t* p = start; p < end; p += line)
+		asm volatile("icbi %y0" :: "Z"(*p));
+	asm volatile("sync");                      // icbi complete ...
+	asm volatile("isync");                     // ... before the next fetch
 }
 
 static void cache_block_before_close(void) {}
@@ -853,6 +852,10 @@ static void gen_run_code(void)
 	DSF_OP(62, HOST_R29, HOST_R1, 208+24, 0); // :
 	DSF_OP(62, HOST_R30, HOST_R1, 208+32, 0); // :
 	DSF_OP(62, HOST_R31, HOST_R1, 208+40, 0); // std r31, 248(sp)
+	// Helpers are entered through their global entry point, which sets r2
+	// to the callee's TOC and never restores ours; keep a copy in the
+	// frame's TOC save slot for the return to C.
+	DSF_OP(62, HOST_R2, HOST_R1, 24, 0); // std r2, 24(sp)
 
 	gen_mov_qword_to_reg_imm(HOST_R28, ((uint64_t)&fpu));
 	gen_mov_qword_to_reg_imm(FC_SEGS_ADDR, ((uint64_t)&Segs));
@@ -872,6 +875,7 @@ static void gen_run_code(void)
 	DSF_OP(58, HOST_R28, HOST_R1, 208+16, 0);
 	DSF_OP(58, HOST_R27, HOST_R1, 208+8 , 0);
 	DSF_OP(58, HOST_R26, HOST_R1, 208+0 , 0);
+	DSF_OP(58, HOST_R2, HOST_R1, 24, 0);      // ld r2, 24(sp)
 
 	IMM_OP(14, HOST_R1, HOST_R1, 256);   // addi sp, sp, 256
 	IMM_OP(19, 0x14, 0, 16<<1);          // blr
