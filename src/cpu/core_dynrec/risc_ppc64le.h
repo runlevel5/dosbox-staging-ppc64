@@ -164,6 +164,22 @@ static void gen_mov_word_to_reg_imm(HostReg dest_reg, uint16_t imm)
 
 DRC_PTR_SIZE_IM block_ptr;
 
+// Split addr into an addis/addi (or addis/displacement) pair relative to
+// cpu_regs, which r31 holds throughout generated code. The whole dosbox image
+// (helper functions, Segs, fpu, the code cache bookkeeping) lies within
+// +/-2 GiB of it regardless of PIE or load address, so this reaches nearly
+// every target in two instructions where the absolute sequence needs five.
+static inline bool split_anchor_offset(int64_t addr, int16_t &ha, int16_t &lo)
+{
+	const int64_t off = addr - (int64_t)&cpu_regs;
+	const int64_t hi  = (off + 0x8000) >> 16;
+	if ((int16_t)hi != hi)
+		return false;
+	ha = (int16_t)hi;
+	lo = (int16_t)off;
+	return true;
+}
+
 // Helper for loading addresses
 // Emits relevant code to load the upper 48 bits if needed
 static HostReg inline gen_addr(int64_t &addr, HostReg dest)
@@ -187,11 +203,16 @@ static HostReg inline gen_addr(int64_t &addr, HostReg dest)
 		return FC_REGS_ADDR;
 	}
 
-	off = addr - (int64_t)block_ptr;
-	if ((int16_t)off == off)
-	{
-		addr = off;
-		return HOST_R27;
+	// r27 only holds the current block inside block code (see
+	// gen_mov_direct_ptr); block_ptr is 0 while the run-code and link
+	// trampolines are generated.
+	if (block_ptr) {
+		off = addr - (int64_t)block_ptr;
+		if ((int16_t)off == off)
+		{
+			addr = off;
+			return HOST_R27;
+		}
 	}
 
 	off = addr - (int64_t)&fpu;
@@ -199,6 +220,13 @@ static HostReg inline gen_addr(int64_t &addr, HostReg dest)
 	{
 		addr = off;
 		return HOST_R28;
+	}
+
+	int16_t ha, lo;
+	if (split_anchor_offset(addr, ha, lo)) {
+		IMM_OP(15, dest, FC_REGS_ADDR, ha); // addis dest, r31, off@ha
+		addr = lo;
+		return dest;
 	}
 
 	if (addr & 0xffffffff00000000) {
@@ -576,43 +604,52 @@ static inline void gen_lea(HostReg dest_reg, Bitu scale, Bits imm)
 	gen_add_imm(dest_reg, imm);
 }
 
+// Load a C function's address into r12 and return the number of words
+// written. The ELFv2 ABI requires r12 to hold the entry address whenever a
+// function is entered through its global entry point (it derives its TOC
+// pointer from it), so this precedes every call, direct bl included.
+static int gen_load_func_addr(uint32_t *pos, uint64_t func)
+{
+	int16_t ha, lo;
+	if (split_anchor_offset((int64_t)func, ha, lo)) {
+		pos[0] = IMM(15, HOST_R12, FC_REGS_ADDR, ha); // addis r12, r31, off@ha
+		pos[1] = IMM(14, HOST_R12, HOST_R12, lo);     // addi r12, r12, off@l
+		return 2;
+	}
+	pos[0] = IMM(15, HOST_R12, 0,        (func & 0xffff000000000000)>>48); // lis
+	pos[1] = IMM(24, HOST_R12, HOST_R12, (func & 0x0000ffff00000000)>>32); // ori
+	pos[2] = RLD(30, HOST_R12, HOST_R12, 32, 31, 1, 0); // rldicr
+	pos[3] = IMM(25, HOST_R12, HOST_R12, (func & 0x00000000ffff0000)>>16); // oris
+	pos[4] = IMM(24, HOST_R12, HOST_R12, (func & 0x000000000000ffff)    ); // ori
+	return 5;
+}
+
+// the length of a padded call stanza; gen_fill_function_ptr overwrites it
+constexpr int call_stanza_words = 7;
+
 // helper function to choose direct or indirect call
 static int inline do_gen_call(void *func, uint64_t *npos, bool pad)
 {
-	int64_t f = (int64_t)func;
-	int64_t off = f - (int64_t)npos;
 	uint32_t *pos = (uint32_t *)npos;
-
-	// the length of this branch stanza must match the assumptions in
-	// gen_fill_function_ptr
+	int n = gen_load_func_addr(pos, (uint64_t)func);
 
 	// relative branches are limited to +/- ~32MB
-	if (off < 0x02000000 && off >= -0x02000000)
-	{
-		pos[0] = 0x48000001 | (off & 0x03FFFFFC); // bl func // "lis"
-		if (pad)
-		{
-			// keep this patchable
-			pos[1] = NOP; // nop "ori"
-			pos[2] = NOP; // nop "rldicr"
-			pos[3] = NOP; // nop "oris"
-			pos[4] = NOP; // nop "ori"
-			pos[5] = NOP; // nop "mtctr"
-			pos[6] = NOP; // nop "bctrl"
-			return 28;
-		}
-		return 4;
+	const int64_t off = (int64_t)func - (int64_t)&pos[n];
+	if (off < 0x02000000 && off >= -0x02000000) {
+		pos[n++] = 0x48000001 | (off & 0x03FFFFFC); // bl func
+		if (!pad)
+			return n * 4;
+		while (n < call_stanza_words)
+			pos[n++] = NOP; // keep this patchable
+		return n * 4;
 	}
 
-	// for ppc64le ELF ABI, use r12 to branch
-	pos[0] = IMM(15, HOST_R12, 0,        (f & 0xffff000000000000)>>48); // lis
-	pos[1] = IMM(24, HOST_R12, HOST_R12, (f & 0x0000ffff00000000)>>32); // ori
-	pos[2] = RLD(30, HOST_R12, HOST_R12, 32, 31, 1, 0); // rldicr
-	pos[3] = IMM(25, HOST_R12, HOST_R12, (f & 0x00000000ffff0000)>>16); // oris
-	pos[4] = IMM(24, HOST_R12, HOST_R12, (f & 0x000000000000ffff)    ); // ori
-	pos[5] = EXT(HOST_R12, 9, 0, 467, 0);      // mtctr r12
-	pos[6] = IMM(19, 0x14, 0, (528<<1)|1); // bctrl
-	return 28;
+	pos[n++] = EXT(HOST_R12, 9, 0, 467, 0); // mtctr r12
+	// the padding sits between mtctr and bctrl, covering the mtctr latency
+	while (n < call_stanza_words - 1)
+		pos[n++] = NOP;
+	pos[n++] = IMM(19, 0x14, 0, (528<<1)|1); // bctrl
+	return n * 4;
 }
 
 // generate a call to a parameterless function
@@ -625,7 +662,7 @@ static void inline gen_call_function_raw(void *func, bool fastcall = true)
 // note: the parameters are loaded in the architecture specific way
 // using the gen_load_param_ functions below
 static inline const uint8_t* gen_call_function_setup(void *func,
-                                             Bitu paramcount,
+                                             [[maybe_unused]] Bitu paramcount,
                                              bool fastcall = false)
 {
 	const auto proc_addr=cache.pos;
@@ -662,21 +699,18 @@ static void inline gen_load_param_mem(Bitu mem, Bitu param)
 	gen_mov_word_to_reg(RegParams[param], (void*)mem, true);
 }
 
-// jump to an address pointed at by ptr, offset is in imm
-// use r12 for ppc64le ABI compatibility
+// jump to the block whose pointer is stored at ptr, entering it at the code
+// address found imm bytes into that block. ptr is always a link slot of the
+// current block, which r27 points to, so the pointer is one ld off r27.
 static void gen_jmp_ptr(void *ptr, Bits imm = 0)
 {
-	// "gen_mov_qword_to_reg"
-	gen_mov_qword_to_reg_imm(HOST_R12,(uint64_t)ptr);         // r12 = *(uint64_t*)ptr
-	DSF_OP(58, HOST_R12, HOST_R12, 0, 0);
+	int64_t addr = (int64_t)ptr;
+	const HostReg base = gen_addr(addr, HOST_R12);
+	DSF_OP(58, HOST_R12, base, addr, 0);                  // ld r12, addr@l(base)
 
-	if ((int16_t)imm != (int32_t)imm) {
-		// FIXME: this is not tested. I've left it as a quasi-assertion.
-		fprintf(stderr, "large gen_jmp_ptr offset\n");
-		__asm__("trap\n");
+	if ((int16_t)imm != (int32_t)imm)
 		IMM_OP(15, HOST_R12, HOST_R12, (imm + 0x8000)>>16); // addis r12, r12, imm@ha
-	}
-	DSF_OP(58, HOST_R12, HOST_R12, (int16_t)imm, 0);                 // ld r12, imm@l(r12)
+	DSF_OP(58, HOST_R12, HOST_R12, imm, 0);                 // ld r12, imm@l(r12)
 	EXT_OP(HOST_R12, 9, 0, 467, 0);                         // mtctr r12
 	IMM_OP(19, 0x14, 0, 528<<1);                            // bctr
 }
@@ -776,20 +810,28 @@ static void cache_block_closing(const uint8_t *block_start, Bitu block_size)
 
 static void cache_block_before_close(void) {}
 
+// tail-jump to a C function through r12 (see gen_load_func_addr)
+static void gen_jmp_c_function(const void* func)
+{
+	uint32_t words[5];
+	const int n = gen_load_func_addr(words, (uint64_t)func);
+	for (int i = 0; i < n; ++i)
+		cache_addd(words[i]);
+	EXT_OP(HOST_R12, 9, 0, 467, 0); // mtctr r12
+	IMM_OP(19, 0x14, 0, 528<<1);    // bctr
+}
+
+// jump to code in the cache; a plain branch reaches +/-32 MB, which covers
+// the whole cache
 static void gen_function(const uint8_t* func)
 {
 	int64_t off = (uint64_t)func - (uint64_t)cache.pos;
 
-	// relative branches are limited to +/- 32MB
 	if (off < 0x02000000 && off >= -0x02000000) {
 		cache_addd(0x48000000 | (off & 0x03FFFFFC)); // b func
 		return;
 	}
-
-	// do NOT move this up above the branch, it causes crashes.
-	gen_mov_qword_to_reg_imm(HOST_R12, (uint64_t)func); // r12 = func
-	EXT_OP(HOST_R12, 9, 0, 467, 0);  // mtctr r12
-	IMM_OP(19, 0x14, 0, 528<<1); // bctr
+	gen_jmp_c_function(func);
 }
 
 // gen_run_code is assumed to be called exactly once, gen_return_function() jumps back to it
@@ -836,7 +878,7 @@ static void gen_run_code(void)
 
 	// trampoline to call get_CF()
 	getCF_glue = cache.pos;
-	gen_function(reinterpret_cast<const uint8_t*>(get_CF));
+	gen_jmp_c_function(reinterpret_cast<const void*>(get_CF));
 }
 
 // return from a function
