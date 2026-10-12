@@ -122,11 +122,14 @@ extern FPU_rec fpu;
 #define TEMP_REG_DRC HOST_R10
 
 // op comes right out of the PowerISA 3.0 documentation
-#define IMM(op, regsd, rega, imm)            (uint32_t)(((op)<<26)|((regsd)<<21)|((rega)<<16)|             (((uint64_t)(imm))&0xFFFF))
-#define DSF(op, regs, rega, ds, bb)          (uint32_t)(((op)<<26)|((regs) <<21)|((rega)<<16)|             (((uint64_t)(ds))&0xFFFC)|(bb))
-#define EXT(regsd, rega, regb, op, rc)       (uint32_t)(  (31<<26)|((regsd)<<21)|((rega)<<16)| ((regb)<<11)|                       ((op)<<1)              |(rc))
-#define RLW(op, regs, rega, sh, mb, me, rc)  (uint32_t)(((op)<<26)|((regs) <<21)|((rega)<<16)|   ((sh)<<11)|((mb   )<<6)|((me)<<1)                        |(rc))
-#define RLD(op, regs, rega, sh, mx, opb, rc) (uint32_t)(((op)<<26)|((regs) <<21)|((rega)<<16)|((sh&31)<<11)|((mx&31)<<6)|(mx&32)  |((opb)<<2)|((sh&32)>>4)|(rc))
+// The primary opcode is shifted as uint32_t: opcodes >= 32 (lwz, std, ...)
+// would overflow a signed int shift. Immediates are truncated to their low
+// 16 bits through uint16_t, which is well defined for negative values.
+#define IMM(op, regsd, rega, imm)            (uint32_t)(((uint32_t)(op)<<26)|((regsd)<<21)|((rega)<<16)|             ((uint32_t)(uint16_t)(imm)))
+#define DSF(op, regs, rega, ds, bb)          (uint32_t)(((uint32_t)(op)<<26)|((regs) <<21)|((rega)<<16)|             ((uint32_t)(uint16_t)(ds)&0xFFFC)|(bb))
+#define EXT(regsd, rega, regb, op, rc)       (uint32_t)(  (31u<<26)|((regsd)<<21)|((rega)<<16)| ((regb)<<11)|                       ((op)<<1)              |(rc))
+#define RLW(op, regs, rega, sh, mb, me, rc)  (uint32_t)(((uint32_t)(op)<<26)|((regs) <<21)|((rega)<<16)|   ((sh)<<11)|((mb   )<<6)|((me)<<1)                        |(rc))
+#define RLD(op, regs, rega, sh, mx, opb, rc) (uint32_t)(((uint32_t)(op)<<26)|((regs) <<21)|((rega)<<16)|((sh&31)<<11)|((mx&31)<<6)|(mx&32)  |((opb)<<2)|((sh&32)>>4)|(rc))
 
 #define IMM_OP(op, regsd, rega, imm)                cache_addd(IMM(op, regsd, rega, imm))
 #define DSF_OP(op, regs, rega, ds, bb)              cache_addd(DSF(op, regs, rega, ds, bb))
@@ -207,6 +210,10 @@ static HostReg inline gen_addr(int64_t &addr, HostReg dest)
 			IMM_OP(25, dest, dest, (addr & 0x00000000ffff0000) >> 16); // oris dest, dest, ...
 	} else {
 		IMM_OP(15, dest, 0, (addr & 0x00000000ffff0000) >> 16); // lis dest, lower
+		// lis sign-extends: an address with bit 31 set would otherwise get
+		// ones in the upper word and the load would hit the wrong address
+		if (addr & 0x80000000)
+			RLD_OP(30, dest, dest, 0, 32, 0, 0); // clrldi dest, dest, 32
 	}
 	// watch unexpected sign extension with following instructions
 	if (addr & 0x8000) {
@@ -937,27 +944,35 @@ static void gen_fill_function_ptr(const uint8_t *pos, void *fct_ptr, Bitu flags_
 			break;
 		case t_SARb:
 			*op++ = EXT(FC_OP1, FC_RETOP, 0, 954, 0); // extsb FC_RETOP, FC_OP1
+			[[fallthrough]];
 		case t_SARw:
 			if (flags_type == t_SARw)
 				*op++ = EXT(FC_OP1, FC_RETOP, 0, 922, 0); // extsh FC_RETOP, FC_OP1
+			[[fallthrough]];
 		case t_SARd:
 			*op++ = EXT(FC_OP1, FC_RETOP, FC_OP2, 792, 0); // sraw FC_RETOP, FC_OP1, FC_OP2
 			break;
 
+		// Byte and word rotates first replicate the operand across the
+		// whole register, so a 32-bit rotate by any count (x86 masks it to
+		// 5 bits) leaves the operand rotated by count mod 8 or 16, matching
+		// dynrec_rol_byte() and friends.
 		case t_ROLb:
-			*op++ = RLW(20, FC_OP1, FC_OP1, 24, 0, 7, 0); // rlwimi FC_OP1, FC_OP1, 24, 0, 7
+			*op++ = RLW(20, FC_OP1, FC_OP1, 8, 16, 23, 0); // rlwimi FC_OP1, FC_OP1, 8, 16, 23
+			[[fallthrough]];
 		case t_ROLw:
-			if (flags_type == t_ROLw)
-				*op++ = RLW(20, FC_OP1, FC_OP1, 16, 0, 15, 0); // rlwimi FC_OP1, FC_OP1, 16, 0, 15
+			*op++ = RLW(20, FC_OP1, FC_OP1, 16, 0, 15, 0); // rlwimi FC_OP1, FC_OP1, 16, 0, 15
+			[[fallthrough]];
 		case t_ROLd:
 			*op++ = RLW(23, FC_OP1, FC_RETOP, FC_OP2, 0, 31, 0); // rotlw FC_RETOP, FC_OP1, FC_OP2
 			break;
 
 		case t_RORb:
 			*op++ = RLW(20, FC_OP1, FC_OP1, 8, 16, 23, 0); // rlwimi FC_OP1, FC_OP1, 8, 16, 23
+			[[fallthrough]];
 		case t_RORw:
-			if (flags_type == t_RORw)
-				*op++ = RLW(20, FC_OP1, FC_OP1, 16, 0, 15, 0); // rlwimi FC_OP1, FC_OP1, 16, 0, 15
+			*op++ = RLW(20, FC_OP1, FC_OP1, 16, 0, 15, 0); // rlwimi FC_OP1, FC_OP1, 16, 0, 15
+			[[fallthrough]];
 		case t_RORd:
 			*op++ = IMM(8, FC_OP2, FC_OP2, 32); // subfic FC_OP2, FC_OP2, 32 (FC_OP2 = 32 - FC_OP2)
 			*op++ = RLW(23, FC_OP1, FC_RETOP, FC_OP2, 0, 31, 0); // rotlw FC_RETOP, FC_OP1, FC_OP2

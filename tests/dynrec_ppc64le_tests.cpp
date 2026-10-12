@@ -111,13 +111,19 @@ constexpr uint32_t PpcBlr = 0x4e800020; // blr
 
 class JitPage {
 public:
-	JitPage()
+	// With a hint the page must land exactly there (MAP_FIXED_NOREPLACE);
+	// callers check ok() and skip when the address is taken.
+	explicit JitPage(void* hint = nullptr)
 	{
-		mem_ = static_cast<uint8_t*>(mmap(nullptr, kSize,
-		                                  PROT_READ | PROT_WRITE,
-		                                  MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
-		EXPECT_NE(mem_, MAP_FAILED);
-		cache.pos = mem_;
+		int flags = MAP_PRIVATE | MAP_ANONYMOUS;
+		if (hint)
+			flags |= MAP_FIXED_NOREPLACE;
+		mem_ = static_cast<uint8_t*>(
+		        mmap(hint, kSize, PROT_READ | PROT_WRITE, flags, -1, 0));
+		if (!hint)
+			EXPECT_NE(mem_, MAP_FAILED);
+		if (mem_ != MAP_FAILED)
+			cache.pos = mem_;
 	}
 	~JitPage()
 	{
@@ -127,6 +133,7 @@ public:
 	JitPage(const JitPage&)            = delete;
 	JitPage& operator=(const JitPage&) = delete;
 
+	bool ok() const { return mem_ != MAP_FAILED; }
 	uint8_t* base() const { return mem_; }
 
 	// Append `blr`, flush caches, flip the page to read+execute and return it
@@ -416,24 +423,27 @@ TEST(DynrecPpc64le, InlinedShiftsAndRotates)
 	}
 }
 
-// Byte/word rotates use an rlwimi to replicate the operand before rotlw.
+// Byte/word rotates replicate the operand across the register before rotlw.
+// x86 masks the count to 5 bits, so counts beyond the operand width must
+// behave like count mod 8 / mod 16 (as dynrec_rol_byte() etc. do); counts of
+// 8 and above used to produce garbage for the byte forms.
 TEST(DynrecPpc64le, InlinedRotatesByteWord)
 {
 	const uint8_t bytes[] = {0x01, 0x80, 0xF0, 0xA5, 0xFF};
 	for (uint8_t b : bytes) {
-		for (unsigned n : {1u, 3u, 7u}) {
-			EXPECT_EQ(emit_op(t_ROLb, b, n) & 0xFF, rotl8(b, n))
+		for (unsigned n : {0u, 1u, 3u, 7u, 8u, 9u, 15u, 16u, 24u, 31u}) {
+			EXPECT_EQ(emit_op(t_ROLb, b, n) & 0xFF, rotl8(b, n & 7))
 			        << "ROLb b=" << std::hex << (int)b << " n=" << n;
-			EXPECT_EQ(emit_op(t_RORb, b, n) & 0xFF, rotr8(b, n))
+			EXPECT_EQ(emit_op(t_RORb, b, n) & 0xFF, rotr8(b, n & 7))
 			        << "RORb b=" << std::hex << (int)b << " n=" << n;
 		}
 	}
 	const uint16_t words[] = {0x0001, 0x8000, 0xF00F, 0xA5A5, 0xFFFF};
 	for (uint16_t w : words) {
-		for (unsigned n : {1u, 8u, 15u}) {
-			EXPECT_EQ(emit_op(t_ROLw, w, n) & 0xFFFF, rotl16(w, n))
+		for (unsigned n : {0u, 1u, 8u, 15u, 16u, 17u, 31u}) {
+			EXPECT_EQ(emit_op(t_ROLw, w, n) & 0xFFFF, rotl16(w, n & 15))
 			        << "ROLw w=" << std::hex << w << " n=" << n;
-			EXPECT_EQ(emit_op(t_RORw, w, n) & 0xFFFF, rotr16(w, n))
+			EXPECT_EQ(emit_op(t_RORw, w, n) & 0xFFFF, rotr16(w, n & 15))
 			        << "RORw w=" << std::hex << w << " n=" << n;
 		}
 	}
@@ -454,6 +464,62 @@ TEST(DynrecPpc64le, InlinedDoubleShifts)
 			}
 		}
 	}
+}
+
+// --- addressing and calls ---------------------------------------------------
+// The emitters below address memory relative to the anchor registers that
+// gen_run_code establishes (r28 = &fpu, r30 = &Segs, r31 = &cpu_regs) and may
+// clobber LR and r27, so the generated code is wrapped in a small ELFv2 frame
+// that sets the anchors up and restores everything afterwards.
+
+constexpr int kFrameBytes = 96;
+
+void emit_prolog()
+{
+	EXT_OP(HOST_R0, 8, 0, 339, 0);                  // mflr r0
+	DSF_OP(62, HOST_R0, HOST_R1, 16, 0);            // std r0, 16(r1)
+	DSF_OP(62, HOST_R1, HOST_R1, -kFrameBytes, 1);  // stdu r1, -96(r1)
+	DSF_OP(62, HOST_R27, HOST_R1, 32, 0);
+	DSF_OP(62, HOST_R28, HOST_R1, 40, 0);
+	DSF_OP(62, HOST_R30, HOST_R1, 48, 0);
+	DSF_OP(62, HOST_R31, HOST_R1, 56, 0);
+	gen_mov_qword_to_reg_imm(HOST_R28, reinterpret_cast<uint64_t>(&fpu));
+	gen_mov_qword_to_reg_imm(HOST_R30, reinterpret_cast<uint64_t>(&Segs));
+	gen_mov_qword_to_reg_imm(HOST_R31, reinterpret_cast<uint64_t>(&cpu_regs));
+}
+
+// Leaves r3 untouched; seal() appends the blr.
+void emit_epilog()
+{
+	DSF_OP(58, HOST_R27, HOST_R1, 32, 0);
+	DSF_OP(58, HOST_R28, HOST_R1, 40, 0);
+	DSF_OP(58, HOST_R30, HOST_R1, 48, 0);
+	DSF_OP(58, HOST_R31, HOST_R1, 56, 0);
+	IMM_OP(14, HOST_R1, HOST_R1, kFrameBytes);      // addi r1, r1, 96
+	DSF_OP(58, HOST_R0, HOST_R1, 16, 0);            // ld r0, 16(r1)
+	EXT_OP(HOST_R0, 8, 0, 467, 0);                  // mtlr r0
+}
+
+// An absolute address below 4 GiB with bit 31 set: lis sign-extends, so the
+// upper word must be cleared or the access goes to 0xFFFFFFFF_xxxxxxxx.
+// Needs an address beyond anchor reach: 3 GiB. Skipped if it is taken.
+TEST(DynrecPpc64le, AbsoluteAddressWithBit31)
+{
+	JitPage data(reinterpret_cast<void*>(uintptr_t{0xC0000000}));
+	if (!data.ok())
+		GTEST_SKIP() << "3 GiB page unavailable";
+	auto* const value = reinterpret_cast<uint32_t*>(data.base() + 0x8010);
+	*value = 0xB16B00B5;
+	const int64_t off = reinterpret_cast<int64_t>(value) -
+	                    reinterpret_cast<int64_t>(&cpu_regs);
+	if (off >= -(int64_t{1} << 31) && off < (int64_t{1} << 31))
+		GTEST_SKIP() << "address is anchor-reachable in this binary layout";
+
+	JitPage page;
+	emit_prolog();
+	gen_mov_word_to_reg(HOST_R3, value, true);
+	emit_epilog();
+	EXPECT_EQ(page.seal<uint32_t (*)()>()(), 0xB16B00B5u);
 }
 
 } // namespace
