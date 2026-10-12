@@ -845,32 +845,25 @@ constexpr bool is_64bit_platform = sizeof(void *) == 8;
 
 static inline void dyn_mem_adjust(void *&ptr, size_t &size)
 {
-#if (HostPageSize == 65536)
-	// Use different code on 64K page systems (currently just ppc64le).
-	// The other code will sometimes underrun our pointer into unmapped
-	// memory and mprotect() will then fail.
-	const auto p = reinterpret_cast<uintptr_t>(ptr);
-	const auto align_adjust = p % HostPageSize;
-	const auto p_aligned = p - align_adjust;
-	assert((p_aligned % HostPageSize) == 0);
-
-	const auto new_size = size + align_adjust;
-	const auto new_size_adjust = new_size % HostPageSize;
-	if (new_size <= HostPageSize) {
-		size = HostPageSize;
-	} else if (new_size_adjust) {
-		size = (new_size - new_size_adjust) + HostPageSize;
-		assert((size % HostPageSize) == 0);
+	// HostPageSize is a constexpr, not a macro, so this has to be a C++
+	// condition: as a preprocessor #if it always evaluated to false.
+	if constexpr (HostPageSize == 65536) {
+		// 64K page systems (currently just ppc64le): align down to the
+		// page and round the size up to whole pages. The -1/+1 below
+		// would also pull in the page before the one asked for.
+		const auto p            = reinterpret_cast<uintptr_t>(ptr);
+		const auto align_adjust = p % HostPageSize;
+		ptr = reinterpret_cast<void*>(p - align_adjust);
+		size = ((size + align_adjust + HostPageSize - 1) / HostPageSize) *
+		       HostPageSize;
+	} else {
+		// Align to page boundary and adjust size. The -1/+1 voodoo
+		// is required to avoid segfaults on 32-bit builds.
+		const auto p            = reinterpret_cast<uintptr_t>(ptr) - 1;
+		const auto align_adjust = p % HostPageSize;
+		ptr = reinterpret_cast<void*>(p - align_adjust);
+		size += align_adjust + 1;
 	}
-#else
-	// Align to page boundary and adjust size. The -1/+1 voodoo
-	// is required to avoid segfaults on 32-bit builds.
-	const auto p = reinterpret_cast<uintptr_t>(ptr) - 1;
-	const auto align_adjust = p % HostPageSize;
-	const auto p_aligned = p - align_adjust;
-	size += align_adjust + 1;
-#endif
-	ptr = reinterpret_cast<void *>(p_aligned);
 }
 
 static inline void dyn_mem_set_access([[maybe_unused]] void *ptr,
@@ -947,6 +940,18 @@ static inline void dyn_cache_invalidate([[maybe_unused]] void *ptr,
 #endif
 }
 
+// Where the backend would like the code cache. A backend that emits shorter
+// calls when the cache sits near the dosbox image returns an address hint
+// (see risc_ppc64le.h); the others leave the placement to the kernel.
+#if C_TARGET_CPU_PPC64LE
+static void* dyn_cache_mmap_hint(size_t size);
+#else
+static inline void* dyn_cache_mmap_hint(size_t)
+{
+	return nullptr;
+}
+#endif
+
 static bool cache_initialized = false;
 
 static void cache_init(bool enable) {
@@ -984,7 +989,13 @@ static void cache_init(bool enable) {
 #if defined(HAVE_MAP_JIT)
 			map_flags |= MAP_JIT;
 #endif
-			cache_code_start_ptr=static_cast<uint8_t *>(mmap(nullptr, cache_code_size, prot_flags, map_flags, -1, 0));
+			cache_code_start_ptr = static_cast<uint8_t*>(
+			        mmap(dyn_cache_mmap_hint(cache_code_size),
+				     cache_code_size,
+				     prot_flags,
+				     map_flags,
+				     -1,
+				     0));
 			if (cache_code_start_ptr == MAP_FAILED) {
 				E_Exit("DYNCACHE: Failed memory-mapping cache memory because: %s", strerror(errno));
 			}
