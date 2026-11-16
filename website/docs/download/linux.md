@@ -1,0 +1,238 @@
+---
+hide:
+  - footer
+---
+
+# Linux releases
+
+!!! danger "READ THIS FIRST!"
+
+    📖 **Read the [0.83.0 release
+    notes](https://www.dosbox-staging.org/download/release-notes/0.83.0/)**.
+    They explain what's new, what's changed, and what may behave differently
+    from previous versions.
+
+    🚀 **New to DOSBox Staging? Read the [Getting Started
+    guide](https://www.dosbox-staging.org/getting-started/).** This is **not
+    optional** --- it covers the basics that most first-time questions are about.
+
+    📚 **Check the [user
+    manual](https://www.dosbox-staging.org/0.83/manual/introduction/about-this-manual/)**
+    to learn how the new features work and how to configure them.
+
+    🔍 **Search the [project website](https://www.dosbox-staging.org/)** using
+    the search box in the top-right corner. It searches the *entire* site,
+    including the Getting Started guide and the user manual.
+
+    🧩 **Check the
+    [wiki](https://github.com/dosbox-staging/dosbox-staging/wiki) and the
+    [Game
+    issues](https://github.com/dosbox-staging/dosbox-staging/wiki/Game-issues)
+    page.** Your problem may already be known, and there may be a workaround.
+
+
+!!! important
+
+    **Only ask a question or raise an issue ticket after you've done ALL of
+    the above.** When you do post, tell us what you've already read and tried.
+    It saves everyone time and gets you an answer faster.
+
+    **Most questions we receive are already answered in the documentation.**
+    Questions and issue tickets that are clearly covered by the docs may be
+    closed without further discussion.
+
+
+## Latest version
+
+<section class="release-downloads" markdown>
+
+  [Download DOSBox Staging 0.83.0 (x86_64)][0_83_0]
+  <br>
+  <small>
+  sha256: d3a94f7f1c3e68a47ec88d61145506c7<wbr>904452adb0c9c5928cb8cfe2331d6c5c
+  </small>
+
+</section>
+
+The latest version is compatible with any laptop or desktop released after
+2010 running a modern x86_64 Linux distribution. It only depends on the C/C++,
+ALSA, and OpenGL system libraries; all other libraries are statically linked.
+A dedicated graphics adapter is recommended for laptops.
+
+Read the [0.83.0 release notes](release-notes/0.83.0.md) to learn about the
+changes and improvements introduced in this version.
+
+Run the `install-icons.sh` script included with the release to install
+the application icons.
+
+
+## Unofficial repackaged releases
+
+DOSBox Staging is also repackaged by external teams as distribution-specific
+repository packages, containerised images, etc. These repackaged releases may
+have variations in configuration file locations, filesystem or network
+restrictions, feature exclusions, and other differences compared to our
+official tarball releases. They might also have bugs introduced by using
+different library versions than what we have tested out official releases
+with.
+
+The DOSBox Staging team does _not_ track or document these differences.
+For issues specific to these unofficial packages, we recommend referring to the
+repository's documentation, and when in doubt, please contact the respective
+repository owners.
+
+!!! warning "Unofficial releases and support"
+
+    We only provide support for our official releases. Any number of weird
+    issues can happen if you start using different library versions, different
+    compilers, different compiler flags or revisions, etc. Many of these
+    issues are hard to notice without being intimately familiar with
+    our software and doing hundreds of hours of testing --- the amount of
+    testing we typically put into each release.
+
+    Therefore, if you believe you've found a bug, and you're not using our
+    official Linux release, the first thing to do is to re-test with that.
+    **Please only report issues that are reproducible using our official
+    release!** If the problem is only present in the unofficial package, you
+    should ask the person or team who did the repackaging for help.
+
+
+## Older versions
+
+These older versions are mainly provided for regression testing. You can also
+use them if you're on a legacy operating system unsupported by the latest
+release, but the core team doesn't offer any help with these earlier releases.
+Our recommendation is to upgrade your operating system and use the latest
+version.
+
+??? note "List of older Linux versions"
+
+    - [DOSBox Staging 0.82.2 (x86_64)][0_82_2]
+      <br>
+      <small>
+      sha256: bc229df72ea103b7865cdca67324772d<wbr>bffa8e58866477e69a79638b723a0442
+      </small>
+
+    - [DOSBox Staging 0.82.1 (x86_64)][0_82_1]
+      <br>
+      <small>
+      sha256: 0b7ca2e0f1fbc10fe51c05011f6cad72<wbr>d10608658de0a58e22a5a936d5e7d075
+      </small>
+
+    - [DOSBox Staging 0.82.0 (x86_64)][0_82_0]
+      <br>
+      <small>
+      sha256: fd491de6e989da2b34be743fd419735b<wbr>efc80e6f507ec15b9b3ea6164624dabf
+      </small>
+
+    - [DOSBox Staging 0.81.2 (x86_64)][0_81_2]
+      <br>
+      <small>
+      sha256: c47f1767ae1371666f40e3a4e13272da<wbr>5c5a98c9c6f355b4fb82bac0d3911a68
+      </small>
+
+    - [DOSBox Staging 0.81.1 (x86_64)][0_81_1]
+      <br>
+      <small>
+      sha256: 5aee92774569cf1e39ade3fccff03994<wbr>464d17b396b0ae98360af61e9d37cba7
+      </small>
+
+    - [DOSBox Staging 0.81.0 (tar.xz)][0_81_0]
+      <br>
+      <small>
+      sha256: 034b08a941a7fd0279a81b10af620999<wbr>c569f7e81b786e7f4b59a0b94e46d399
+      </small>
+
+    - [DOSBox Staging 0.80.1 (x86_64)][0_80_1]
+      <br>
+      <small>
+      sha256: 12582a6496b1a276cd239e6b3d21ddfc<wbr>d51fd8f9e40a1ebbc0a3800e0636190a
+      </small>
+
+    - [DOSBox Staging 0.80.0 (x86_64)][0_80_0]
+      <br>
+      <small>
+      sha256: 3022bdd405dc1106007c3505e6a5d083<wbr>de982d516c9bce499e2c4a02a697a1bd
+      </small>
+
+    - [DOSBox Staging 0.79.1 (x86_64)][0_79_1]
+      <br>
+      <small>
+      sha256: aebf8619bb44934f18d0e219d50c4e2c<wbr>03b179c37daa67a9b800e7bd3aefc262
+      </small>
+
+    - [DOSBox Staging 0.78.1 (x86_64)][0_78_1]
+      <br>
+      <small>
+      sha256: 8bd2a247ca960f6059276db2b0331f85<wbr>3e16bc8a090722b15f567782542b5fba
+      </small>
+
+    - [DOSBox Staging 0.78.0 (x86_64)][0_78_0]
+      <br>
+      <small>
+      sha256: 085e7cbe350546b3f25b0400c872a276<wbr>6f9a49d16a5ca8d17a0a93aad6e37709
+      </small>
+
+    - [DOSBox Staging 0.77.1 (x86_64)][0_77_1]
+      <br>
+      <small>
+      sha256: e2d475e4b1f80881ccafc4502b3884c0<wbr>96b51aa2fc2cfe89bb6c2b8ebfb7cc76
+      </small>
+
+    - [DOSBox Staging 0.76.0 (x86_64)][0_77_0]
+      <br>
+      <small>
+      sha256: f8401bcd473d5b664eeb3a90e4dbb4bb<wbr>f0cef5339adba867f361c00b7de9b2fe
+      </small>
+
+    - [DOSBox Staging 0.76.0 (x86_64)][0_76_0]
+      <br>
+      <small>
+      sha256: b14de58ba0f5dd192398cda58fa439b1<wbr>5512f50d1c88b5ded6f300d4a9212852
+      </small>
+
+    - [DOSBox Staging 0.75.2 (x86_64)][0_75_2]
+      <br>
+      <small>
+      sha256: 0325a1860aea95e8117aa49b041bfd62<wbr>8ab20531a3abc7b0a67aff4c47049465
+      </small>
+
+    - [DOSBox Staging 0.75.1 (x86_64)][0_75_1]
+      <br>
+      <small>
+      sha256: aef22e5ddf93ff826fc2d48a4c8c0b40<wbr>97d3455525b40be5b3fb443935929c70
+      </small>
+
+    - [DOSBox Staging 0.75.0 (x86_64)][0_75_0]
+      <br>
+      <small>
+      sha256: a28d8ba0481722c8343b7532299c7b9b<wbr>b9e491c6832d9d05dd4704939287f776
+      </small>
+
+    - [DOSBox Staging 0.75.0-rc1 (x86_64)][0_75_0_rc1]
+      <br>
+      <small>
+      sha256: 594ba45280af240cb18b3882f7ffa711<wbr>69a697eb362b7d7a76c8ccda2b940e84
+      </small>
+
+
+[0_83_0]: https://github.com/dosbox-staging/dosbox-staging/releases/download/v0.83.0/dosbox-staging-linux-x86_64-v0.83.0.tar.xz
+[0_82_2]: https://github.com/dosbox-staging/dosbox-staging/releases/download/v0.82.2/dosbox-staging-linux-x86_64-v0.82.2.tar.xz
+[0_82_1]: https://github.com/dosbox-staging/dosbox-staging/releases/download/v0.82.1/dosbox-staging-linux-x86_64-v0.82.1.tar.xz
+[0_82_0]: https://github.com/dosbox-staging/dosbox-staging/releases/download/v0.82.0/dosbox-staging-linux-x86_64-v0.82.0.tar.xz
+[0_81_2]: https://github.com/dosbox-staging/dosbox-staging/releases/download/v0.81.2/dosbox-staging-linux-v0.81.2.tar.xz
+[0_81_1]: https://github.com/dosbox-staging/dosbox-staging/releases/download/v0.81.1/dosbox-staging-linux-v0.81.1.tar.xz
+[0_81_0]: https://github.com/dosbox-staging/dosbox-staging/releases/download/v0.81.0/dosbox-staging-linux-v0.81.0.tar.xz
+[0_80_1]: https://github.com/dosbox-staging/dosbox-staging/releases/download/v0.80.1/dosbox-staging-linux-v0.80.1.tar.xz
+[0_80_0]: https://github.com/dosbox-staging/dosbox-staging/releases/download/v0.80.0/dosbox-staging-linux-v0.80.0.tar.xz
+[0_79_1]: https://github.com/dosbox-staging/dosbox-staging/releases/download/v0.79.1/dosbox-staging-linux-v0.79.1.tar.xz
+[0_78_1]: https://github.com/dosbox-staging/dosbox-staging/releases/download/v0.78.1/dosbox-staging-linux-v0.78.1.tar.xz
+[0_78_0]: https://github.com/dosbox-staging/dosbox-staging/releases/download/v0.78.0/dosbox-staging-linux-v0.78.0.tar.xz
+[0_77_1]: https://github.com/dosbox-staging/dosbox-staging/releases/download/v0.77.1/dosbox-staging-linux-v0.77.1.tar.xz
+[0_77_0]: https://github.com/dosbox-staging/dosbox-staging/releases/download/v0.77.0/dosbox-staging-linux-v0.77.0.tar.xz
+[0_76_0]: https://github.com/dosbox-staging/dosbox-staging/releases/download/v0.76.0/dosbox-staging-linux-v0.76.0.tar.xz
+[0_75_2]: https://github.com/dosbox-staging/dosbox-staging/releases/download/v0.75.2/dosbox-staging-linux-v0.75.2.tar.xz
+[0_75_1]: https://github.com/dosbox-staging/dosbox-staging/releases/download/v0.75.1/dosbox-staging-linux-v0.75.1.tar.xz
+[0_75_0]: https://github.com/dosbox-staging/dosbox-staging/releases/download/v0.75.0/dosbox-staging-linux-v0.75.0.tar.xz
+[0_75_0_rc1]: https://github.com/dosbox-staging/dosbox-staging/releases/download/v0.75.0-rc1/dosbox-staging-linux-v0.75.0-rc1.tar.xz
+

@@ -14,6 +14,15 @@ All key bindings can be customised through the [key mapper](keymapper.md)
 [Keyboard shortcuts](../appendices/shortcuts.md) for the full list of
 default bindings.
 
+## DOS keyboard layout and code pages
+
+DOSBox Staging also emulates DOS's own keyboard layout and code page
+(screen font) system, separate from the capture settings above. It's
+managed from the DOS prompt with the `KEYB` and `CHCP` commands rather than
+through configuration here --- see
+[Keyboard layout and code pages](../system/localisation.md#keyboard-layout-and-code-pages)
+for the full explanation.
+
 
 ## Configuration settings
 

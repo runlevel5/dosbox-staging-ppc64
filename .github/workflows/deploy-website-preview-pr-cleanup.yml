@@ -1,0 +1,95 @@
+name: Cleanup website preview (PR)
+
+# Workflow-level permissions kept as `read-all`; see the matching note in
+# deploy-website-preview-pr.yml. `pull-requests: write` is set at the job
+# level on `cleanup` instead.
+permissions: read-all
+
+on:
+  pull_request:
+    types: [closed]
+
+    # Symmetric with deploy-website-preview-pr.yml: only PRs targeting main
+    # ever produced a preview, so only those need automatic cleanup.
+    branches: [main]
+
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number whose preview should be removed'
+        required: true
+        type: string
+
+concurrency:
+  group: deploy-website-preview-pr-${{ github.event.pull_request.number || github.event.inputs.pr_number }}
+  cancel-in-progress: true
+
+jobs:
+  cleanup:
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      || github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: read
+      pull-requests: write
+    runs-on: ubuntu-slim
+    env:
+      PR_NUMBER: ${{ github.event.pull_request.number || github.event.inputs.pr_number }}
+
+    steps:
+      # Local actions are loaded from the workspace, so this repo's actions
+      # are checked out at its root and the Pages repo nests inside it.
+      - name: Check out the repository's actions
+        uses: actions/checkout@v7
+        with:
+          sparse-checkout: .github/actions
+          submodules: false
+
+      - name: Check out Pages repo
+        uses: actions/checkout@v7
+        with:
+          token: ${{ secrets.ACCESS_TOKEN_REPO }}
+          repository: dosbox-staging/dosbox-staging.github.io
+          ref: master
+          submodules: false
+          path: dosbox-staging.github.io
+
+      # Deploys push to the same repo, including a cancelled deploy for this
+      # PR that was already mid-push. Each attempt redoes the removal on top
+      # of the latest master, so if another push lands first, ours is
+      # rejected and the next attempt starts over.
+      - name: Remove preview if present
+        uses: ./.github/actions/retry
+        with:
+          cmd: |
+            set -e
+            cd dosbox-staging.github.io
+
+            git fetch origin master
+            git reset --hard FETCH_HEAD
+
+            PREVIEW_DIR="preview/pr-${PR_NUMBER}"
+
+            if [[ ! -d "$PREVIEW_DIR" ]]; then
+              echo "No preview to remove."
+              exit 0
+            fi
+
+            git config user.name "GitHub Actions Bot"
+            git config user.email "<>"
+            git rm -rf "$PREVIEW_DIR"
+            git commit -m "Remove preview for PR #${PR_NUMBER}"
+            git push origin HEAD:master
+
+            # The retry action can't set step outputs
+            echo "cleaned=true" >> "$GITHUB_ENV"
+
+      - name: Update sticky comment
+        if: env.cleaned == 'true'
+        uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # v3.0.5
+        with:
+          header: website-preview
+          number: ${{ env.PR_NUMBER }}
+          message: |
+            > [!NOTE]
+            > ## 📖 Website preview removed

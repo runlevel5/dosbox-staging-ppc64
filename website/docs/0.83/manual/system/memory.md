@@ -60,7 +60,7 @@ type via [`ems`](#ems), [`xms`](#xms), or [`umb`](#umb) is a quick fix.
 
 ## Configuration settings
 
-### Total machine memory
+### Total memory
 
 This setting is configured in the `[dosbox]` section.
 
@@ -71,15 +71,30 @@ This setting is configured in the `[dosbox]` section.
     advantage when raising this value.
 
 
-### DOS memory management
+### Memory management
 
 These settings are configured in the `[dos]` section.
 
 ##### ems
-:   Enable EMS support. Enabled provides the best compatibility but certain
-    applications may run better with other choices, or require EMS support to
-    be disabled to work at all.
-    Possible values: `on` *default*{ .default }, `off`
+:   Enable EMS support.
+
+    Possible values:
+
+    - `off` -- Disable EMS entirely. INT 67h is not installed, so programs
+      that probe for it correctly detect it as absent.
+
+    - `on` *default*{ .default } -- Standard LIM EMS via the INT 67h
+      page-frame interface, without emulating a protected-mode memory manager
+      (default). Provides the best compatibility with most software.
+
+    - `emsboard` --  Emulates a physical EMS expansion board rather than a
+      software manager: real mode only, no VCPI. Useful for software that
+      expects board-style EMS behavior, or on pre-386 CPU types where
+      EMM386-style emulation isn't possible.
+
+    - `emm386` -- Emulates EMS the way loading EMM386.EXE under real DOS
+      would, including VCPI support for DOS extenders that switch to protected
+      mode, and matching its DMA-wrapping behavior.
 
 ##### xms
 :   Enable XMS memory support.

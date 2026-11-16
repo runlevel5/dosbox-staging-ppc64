@@ -48,9 +48,9 @@ You must use the version of DOSBox Staging this guide was written for (you can
 check the version in the navigation bar at the top of the page; it's the
 number to the right of the DOSBox Staging logo, e.g. **0.83**). A banner at
 the top of the page warns you if you're not viewing the latest version of the
-guide. We recommend using the latest stable version of our software; we just
-make the guide and the manual available for earlier versions too for people
-who haven't upgraded yet.
+guide. We recommend using the latest version of our software; we just make the
+guide and the manual available for earlier versions too for people who haven't
+upgraded yet.
 
 If you're a beginner and have previously installed DOSBox Staging on your
 machine, we highly recommend uninstalling it first, then installing the
@@ -75,7 +75,7 @@ well.
 #### Windows
 
 Download the DOSBox Staging installer version appropriate for this guide from
-our [Windows releases](../../releases/windows.md) page, then proceed with the
+our [Windows releases](../../download/windows.md) page, then proceed with the
 installation. Just accept the default options; don't change anything.
 
 Make sure to read the section about dealing with [Microsoft Defender SmartScreen](../manual/using-dosbox-staging/starting.md#windows-defender).
@@ -83,7 +83,7 @@ Make sure to read the section about dealing with [Microsoft Defender SmartScreen
 #### macOS
 
 Download the DOSBox Staging universal binary version appropriate for this
-guide from our [macOS releases](../../releases/macos.md) page, then simply
+guide from our [macOS releases](../../download/macos.md) page, then simply
 drag the DOSBox Staging icon into your Applications folder. Both Intel and
 Apple silicon Macs are supported.
 
@@ -93,7 +93,7 @@ Don't delete the `.dmg` installer disk image just yet --- we'll need it later.
 #### Linux
 
 Download the DOSBox Staging version appropriate for this guide from our [Linux
-releases](../../releases/linux.md) page. Our official Linux build is
+releases](../../download/linux.md) page. Our official Linux build is
 statically linked and runs on most desktop Linux distributions (x86_64 only
 for now).
 

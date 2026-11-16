@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText:  2020-2025 The DOSBox Staging Team
+// SPDX-FileCopyrightText:  2020-2026 The DOSBox Staging Team
 // SPDX-FileCopyrightText:  2002-2021 The DOSBox Team
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -44,7 +44,7 @@ private:
 };
 } // namespace
 
-void DOS_Shell::ShowPrompt()
+void DosShell::ShowPrompt()
 {
 	const uint8_t drive = DOS_GetDefaultDrive() + 'A';
 	char dir[DOS_PATHLENGTH];
@@ -60,7 +60,7 @@ void DOS_Shell::ShowPrompt()
 	CONSOLE_ResetLastWrittenChar('\n');
 }
 
-void DOS_Shell::InputCommand(char* line)
+void DosShell::InputCommand(char* line)
 {
 	std::string command = ReadCommand();
 
@@ -87,7 +87,7 @@ void DOS_Shell::InputCommand(char* line)
 	line[CMD_MAXLINE - 1] = '\0';
 }
 
-std::string DOS_Shell::ReadCommand()
+std::string DosShell::ReadCommand()
 {
 	std::vector<std::string> history_clone = history->GetCommands(
 	        get_utf8_code_page());
@@ -365,7 +365,7 @@ static std::vector<std::string> get_completions(const std::string_view command)
 	return files;
 }
 
-std::string DOS_Shell::SubstituteEnvironmentVariables(std::string_view command)
+std::string DosShell::SubstituteEnvironmentVariables(std::string_view command)
 {
 	std::string expanded = {};
 
@@ -470,24 +470,21 @@ void CommandPrompt::SetCursor(const std::string::size_type index)
 	                   position_zero.page);
 }
 
-// Only for use in ExecuteProgram()
-// Not suitable for generic use as it only handles 3 letter file extensions.
-// It also doesn't look at space padding, which never happens here.
-// Space padding matters when dealing with internal DOS data strctures which we are not doing.
-static std::string_view get_executable_extension(const std::string_view filename)
+// Returns the extension of the last path element including the dot (e.g.,
+// ".EXE"), or an empty string if there is none. Like in COMMAND.COM, only the
+// last path element is considered, so "..\GAME" has no extension.
+static std::string_view get_extension(const std::string_view path)
 {
-	constexpr size_t ExtensionSize = 4;
-	if (filename.size() <= ExtensionSize) {
-		return "";
+	const auto filename = path.substr(path.find_last_of("\\/") + 1);
+
+	const auto dot_pos = filename.rfind('.');
+	if (dot_pos == std::string_view::npos) {
+		return {};
 	}
-	const auto dot_position = filename.size() - ExtensionSize;
-	if (filename[dot_position] != '.') {
-		return "";
-	}
-	return filename.substr(dot_position);
+	return filename.substr(dot_pos);
 }
 
-bool DOS_Shell::ExecuteProgram(std::string_view name, std::string_view args)
+bool DosShell::ExecuteProgram(std::string_view name, std::string_view args)
 {
 	if (name.size() > 1 && (std::isalpha(name[0]) != 0) &&
 	    (name.substr(1) == ":" || name.substr(1) == ":\\")) {
@@ -500,7 +497,7 @@ bool DOS_Shell::ExecuteProgram(std::string_view name, std::string_view args)
 	}
 
 	const auto fullname  = ResolvePath(name);
-	const auto extension = get_executable_extension(fullname);
+	const auto extension = get_extension(fullname);
 
 	if (iequals(extension, ".BAT")) {
 		const auto current_echo = batchfiles.empty()
@@ -531,7 +528,7 @@ bool DOS_Shell::ExecuteProgram(std::string_view name, std::string_view args)
 	return false;
 }
 
-std::string DOS_Shell::ResolvePath(const std::string_view name) const
+std::string DosShell::ResolvePath(const std::string_view name) const
 {
 	static constexpr auto Extensions = {".COM", ".EXE", ".BAT"};
 
@@ -553,7 +550,7 @@ std::string DOS_Shell::ResolvePath(const std::string_view name) const
 		                std::make_move_iterator(path_directories.end()));
 	}
 
-	const bool has_extension = !get_executable_extension(name).empty();
+	const bool has_extension = !get_extension(name).empty();
 
 	for (const auto& prefix : prefixes) {
 		if (has_extension) {
@@ -666,7 +663,7 @@ static void run_binary_executable(const std::string_view fullname,
 	reg_sp += 0x200;
 }
 
-bool DOS_Shell::SetEnv(std::string_view entry, std::string_view new_string)
+bool DosShell::SetEnv(std::string_view entry, std::string_view new_string)
 {
 	return psp->SetEnvironmentValue(entry, new_string);
 }

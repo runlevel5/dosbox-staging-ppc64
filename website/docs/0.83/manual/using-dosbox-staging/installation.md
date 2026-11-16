@@ -20,13 +20,13 @@ your system. Follow the instructions for your operating system below.
 
 ## Windows
 
-The latest release of DOSBox Staging is compatible with any Windows laptop or
+The latest version of DOSBox Staging is compatible with any Windows laptop or
 desktop running **64-bit Windows 8, 10 or 11**. A dedicated graphics adapter
 is recommended for laptops.
 
-We recommend downloading the [latest stable
-version](../../../releases/windows.md#current-stable-version) from our
-website. Both installer and portable ZIP package variants are available.
+We recommend downloading the [latest
+version](../../../download/windows.md#latest-version) from our website. Both
+installer and portable ZIP package variants are available.
 
 If you're new to DOSBox Staging, we recommend the installer and accepting the
 default install options --- that will give you an **Open with DOSBox Staging**
@@ -47,7 +47,7 @@ the first time.
 
     If you're still on a legacy Windows version, you can try one of our [older
     unsupported
-    releases](../../../releases/windows.md#legacy-windows-support). Note that
+    releases](../../../download/windows.md#older-versions). Note that
     these older versions are provided as-is --- we don't provide any support
     for them. Also note they don't come with a manual; many things from the
     current manual and [Getting Started
@@ -62,18 +62,17 @@ the first time.
 
 ## macOS
 
-The latest version of DOSBox Staging requires **macOS 11 (Big Sur)** or later,
-and supports both Intel and Apple silicon Macs.
+The latest version of DOSBox Staging requires **macOS 12 (Monterey)** or
+later, and supports both Intel and Apple silicon Macs.
 
-Download the [latest stable
-version](../../../releases/macos.md#current-stable-version) from our macOS
-releases page, then simply drag the DOSBox Staging icon into your Applications
-folder.
+Download the [latest version](../../../download/macos.md#latest-version) from
+our macOS releases page, then simply drag the DOSBox Staging icon into your
+Applications folder.
 
 !!! note "Legacy macOS support"
 
     If you're still on a legacy macOS version, you can try one of our [older
-    unsupported releases](../../../releases/macos.md#older-releases). Note
+    unsupported versions](../../../download/macos.md#older-versions). Note
     that these older versions are provided as-is --- we don't provide any
     support for them. Also note they don't come with a manual; many things
     from the current manual and [Getting
@@ -83,7 +82,7 @@ folder.
 
 ## Linux
 
-The latest DOSBox Staging release is compatible with any laptop or desktop
+The latest DOSBox Staging version is compatible with any laptop or desktop
 released after 2010 running a modern x86_64 Linux distribution. A dedicated
 graphics adapter is recommended for laptops.
 
@@ -104,5 +103,5 @@ the application icons.
     If you still decide to use them and run into problems, please ask the
     person or team who did the repackaging, _not_ the core DOSBox Staging
     team. Read [Unofficial repackaged
-    releases](../../../releases/linux.md#unofficial-repackaged-releases) to
+    releases](../../../download/linux.md#unofficial-repackaged-releases) to
     learn more.

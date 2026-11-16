@@ -24,7 +24,7 @@ step:
     content:
 
     ```
-    C:\Users\%USERNAME%\AppData\Local\DOSBox\dosbox.exe
+    C:\Users\%USERNAME%\AppData\Local\Programs\DOSBox Staging\dosbox.exe
     ```
 
     That's the default installation path chosen by the installer. `%USERNAME%`
@@ -82,7 +82,7 @@ inside your `Beneath a Steel Sky` game folder.
 Also grab the scan of the [Security
 Manual](https://archive.org/details/beneath-a-steel-sky-security-manual/) and
 the [comic
-book](https://ia802200.us.archive.org/13/items/beneath-a-steel-sky-comic-book/Beneath_a_Steel_Sky.pdf)
+book](https://archive.org/details/beneath-a-steel-sky-comic-book)
 included in the boxed version of the game.
 
 For the visually inclined, this is the structure we'll end up with:
@@ -117,9 +117,7 @@ SKY      RST                  53,720 07/07/1994  7:19a
                 0 dir(s)                      0 bytes free
 ```
 
-We have two `.EXE` files and one text file. `README.TXT` just contains some
-legal notice we don't need to worry about (view it with `more README.TXT` if
-you're curious). `INSTALL.EXE` is what we're after, so run that.
+We have two `.EXE` files. `INSTALL.EXE` is what we're after, so run that.
 
 We're greeted by a pretty standard-looking text-mode installer. Either press
 any key or wait a few seconds to progress to the second screen, where you
@@ -331,10 +329,10 @@ DOSBox emulates the **Sound Blaster 16** by default. This card can emulate all
 earlier Sound Blaster models and offers the widest compatibility with DOS
 games.
 
-But back in the day there were more Sound Blaster variants and clones than
-you could shake a stick at, many with quite different default volume levels.
-We don't know which model this game's developers used, so it's worth trying
-a few. Let's start with a first-revision **Sound Blaster Pro**:
+But back in the day there were more Sound Blaster variants and clones than you
+could shake a stick at, many with quite different default volume levels. We
+don't know which model this game's developers used, so it's worth trying a
+few. Let's start with a second-revision (most common) **Sound Blaster Pro**:
 
 ```ini
 [sblaster]
@@ -388,20 +386,17 @@ is the best solution.
 
     Not letting a game adjust volume levels can sometimes backfire, e.g. in a
     game that intelligently lowers OPL music whenever speech is playing. But
-    it's worth a shot --- some games benefit from wrestling control from them
+    it's worth a shot --- some games benefit from wresting control from them
     and putting the mixer into "manual mode".
 
 
 ## Adjusting the emulated CPU speed
 
-If you *did* watch the intro (which I told you to skip, but no hard
-feelings), you'll have heard severe audio stuttering from the moment the
-narrator starts speaking. If you haven't, watch it now!
-
-What's happening? DOS gaming spans almost two decades, with wildly different
-CPU speeds in use throughout (see [CPU](../manual/system/cpu.md) for the full
-reference). DOSBox doesn't emulate a specific CPU, just a "generic" one --- so
-how does it know what speed to run a given game at?
+How fast should DOSBox run a game? DOS gaming spans almost two decades, with
+wildly different CPU speeds in use throughout (see
+[CPU](../manual/system/cpu.md) for the full reference). DOSBox doesn't emulate
+a specific CPU, just a "generic" one --- so how does it know what speed a
+given game needs?
 
 It doesn't.
 
@@ -413,19 +408,38 @@ impossible, but detecting real vs. protected mode is trivial, so DOSBox does
 automatic speed calibration by default:
 
 - **Real mode** games: **3000** CPU instructions per millisecond (roughly a
-  386SX at 20 MHz)
-- **Protected mode** games: **60,000** instructions per millisecond (roughly
-  a Pentium at 90 MHz)
+  386SX at 20 MHz, or a 286 at 25 MHz)
+
+- **Protected mode** games: **60&thinsp;000** instructions per millisecond
+  (roughly a Pentium at 100 MHz)
 
 The reasoning: older games are often sensitive to CPU speed and might
 misbehave if it's too fast, hence the conservative default; newer games
-benefit from extra speed and generally tolerate faster processors fine.
+benefit from extra speed and often tolerate faster processors fine (as long as
+the emulated speed remains in the still realistic "fast Pentium" territory).
 
-This gets all games *running*, but manual tweaking is often needed to make a
-particular game run *smoothly*. Protected-mode games at "too high" cycle
-counts are especially problematic since there's not enough headroom left for
-glitch-free audio --- there's no point emulating a faster CPU than the game
-needs, since that extra power could go toward smoother audio instead.
+This gets all games *running*, and on a reasonably modern computer, most of
+them will run just fine out of the box. But the defaults are a ballpark guess,
+not a tuned setting; there are good reasons to find the optimal CPU cycles
+setting for each game:
+
+- **Audio might stutter on slower computers.** Emulating a fast CPU (higher
+  emulated CPU cycles value) takes a lot of host CPU power. If your machine
+  doesn't have much to spare, there might not be enough headroom left for
+  glitch-free audio emulation, which might result in stuttering, clicks, pops,
+  or distorted audio.
+
+- **A "too fast" emulated CPU can cause subtle problems.**
+  Games were written for the hardware of their time, and some of them behave
+  slightly differently (or just wrong) when they run much faster than they
+  were designed for. These bugs can be easy to miss.
+
+- **It wastes host CPU power.** Extra emulated speed beyond what the game
+  needs doesn't make it look or sound any better.
+
+So even if you aren't hearing or seeing any problems, it's good practice to
+find a sensible cycles value for each game and set it explicitly. Always aim
+for the *minimum* value that gives adequate performance.
 
 Beneath a Steel Sky is a protected-mode game --- how do we know? Comment out
 the `sky` command in `[autoexec]`, launch DOSBox Staging windowed, and check
@@ -442,50 +456,50 @@ the title bar change:
 SKY.EXE - 60000 cycles/ms - to capture the mouse press...
 ```
 
-`SKY.EXE` is now running, and it's at 60,000 cycles/ms --- our protected-mode
+`SKY.EXE` is now running, and it's at 60&thinsp;000 cycles/ms --- our protected-mode
 default, confirming this is a protected-mode game.
 
-That's the crux of the stuttering: not enough horsepower left for
-time-critical audio. The fix is to cap the cycle count instead of letting
-DOSBox run wild. `cpu_cycles` sets real-mode cycles, `cpu_cycles_protected`
-sets protected-mode cycles:
+That's a lot more speed than a 1994 adventure game with mostly static 2D
+graphics needs. To cap it, set the cycles value in your config instead of
+letting DOSBox use the default. `cpu_cycles` sets real-mode cycles,
+`cpu_cycles_protected` sets protected-mode cycles:
 
 ```ini
 [cpu]
 cpu_cycles_protected = 25000
 ```
 
-Restart DOSBox Staging and watch the intro again --- the audio glitches
-should be gone. Well done, time for a beer (or your beverage of choice)!
-:sunglasses: :beer:
+Restart DOSBox Staging and check that the game still runs well. Nothing
+should look or sound different, and the game will be using a lot less host
+CPU power than before. (If you're on a slower machine, this is where you might
+notice an improvement in audio smoothness, too.)
 
 !!! info "Real and protected mode"
 
-    In simple terms, **real mode** is the legacy 16-bit mode of a 386 or
-    later CPU, while **protected mode** takes full advantage of its
-    capabilities in 32-bit mode. Protected mode couldn't be widely used until
-    386+ CPUs became common, around 1993; games from then on use it almost
-    exclusively.
+    In simple terms, **real mode** is the legacy 16-bit mode of a 386 or later
+    CPU, while **protected mode** takes full advantage of its capabilities in
+    32-bit mode. Protected mode couldn't be widely used until 386+ CPUs became
+    common, around 1993; games from then on use it almost exclusively.
 
     You can spot protected-mode games by the presence of [DOS
-    extenders](https://en.wikipedia.org/wiki/DOS_extender) like
-    `DOS4GW.EXE`, `PMODEW.EXE`, or `CWSDPMI.EXE` in their game directories,
-    and by characteristic startup messages. But you don't need to worry about
-    any of that --- DOSBox tells you with 100% accuracy via the title bar, so
-    just leave `cpu_cycles`/`cpu_cycles_protected` at their defaults (or set
-    custom values) and watch the title as the game runs.
+    extenders](https://en.wikipedia.org/wiki/DOS_extender) like `DOS4GW.EXE`,
+    `PMODEW.EXE`, or `CWSDPMI.EXE` in their game directories, and by
+    characteristic startup messages. But you don't need to check for any of
+    that. DOSBox Staging shows the current cycles value in the title bar, so
+    just watch it as the game starts: with the default settings, 3000 means
+    the game runs in real mode and 60&thinsp;000 means protected mode.
 
 
 ### Finding the correct speed for a game
 
-Okay, so why set `cpu_cycles_protected` to 25&thinsp;000 and not any other number? The game's manual states
-that a 386 or better processor is required. Indeed, the game works fine at
-6000 cycles, which approximates a 386DX CPU running at 33 MHz, but the loading
-times are a bit on the slow side. Setting the CPU cycles to
-25&thinsp;000 --- which roughly corresponds to a 486DX2/66 --- speeds up the
-loading considerably without causing any negative side effects. This is not
-surprising as the DX2/66 was one of the
-most popular CPUs in the 1990s for gaming. This is [what Wikipedia says about
+Okay, so why set `cpu_cycles_protected` to 25&thinsp;000 and not any other
+number? The game's manual states that a 386 or better processor is required.
+Indeed, the game works fine at 6000 cycles, which approximates a 386DX CPU
+running at 33 MHz, but the loading times are a bit on the slow side. Setting
+the CPU cycles to 25&thinsp;000 --- which roughly corresponds to a 486DX2/66
+--- speeds up the loading considerably without causing any negative side
+effects. This is not surprising as the DX2/66 was one of the most popular CPUs
+in the 1990s for gaming. This is [what Wikipedia says about
 it](https://en.wikipedia.org/wiki/Intel_DX2#:~:text=The%20i486DX2%2D66,performance%20and%20longevity.):
 
 > The i486DX2-66 was a very popular processor for video game enthusiasts in
@@ -499,21 +513,21 @@ popular processors:
 
 <div class="compact center-table" markdown>
 
-| Emulated CPU      |    MHz | Cycles | Year
-|-------------------|-------:|-------:|-----:
-| 8088              |   4.77 |    300 | 1981
-| 286               |      8 |    700 | 1984
-| 286               |     12 |   1500 | 1986
-| **286**           | **25** | **3000** | **1988**
-| 386DX             |     25 |   4500 | 1988
-| 386DX             |     33 |   6000 | 1989
-| 486DX             |     33 | 12&thinsp;000 | 1990
-| 486DX2            |     66 | 25&thinsp;000 | 1992
-| 486DX4            |    100 | 35&thinsp;000 | 1994
-| Intel Pentium     |     90 | 50&thinsp;000 | 1994
-| Intel Pentium     |    100 | 60&thinsp;000 | 1994
-| Intel Pentium MMX |    166 | 100&thinsp;000 | 1997
-| Intel Pentium II  |    300 | 200&thinsp;000 | 1997
+| Emulated CPU        | MHz      | Cycles         | Year
+| ------------------- | -------: | -------:       | -----:
+| 8088                | 4.77     | 300            | 1981
+| 286                 | 8        | 700            | 1984
+| 286                 | 12       | 1500           | 1986
+| **286**             | **25**   | **3000**       | **1988**
+| 386DX               | 25       | 4500           | 1988
+| 386DX               | 33       | 6000           | 1989
+| 486DX               | 33       | 12&thinsp;000  | 1990
+| 486DX2              | 66       | 25&thinsp;000  | 1992
+| 486DX4              | 100      | 35&thinsp;000  | 1994
+| Intel Pentium       | 90       | 50&thinsp;000  | 1994
+| Intel Pentium       | 100      | 60&thinsp;000  | 1994
+| Intel Pentium MMX   | 166      | 100&thinsp;000 | 1997
+| Intel Pentium II    | 300      | 200&thinsp;000 | 1997
 
 </div>
 
@@ -528,10 +542,10 @@ For 2D games from the 90s, an emulated 486DX2/66 handles anything you throw
 at it. For 3D games you'll likely need Pentium or Pentium MMX levels, and
 Pentium II speeds for 3D SVGA gaming at 640×480 or higher. For older
 real-mode games, the default 3000 cycles is a good starting point, but try
-the 300–10,000 range if it needs improvement.
+the 300–10&thinsp;000 range if it needs improvement.
 
 You can fine-tune cycles live with ++ctrl+f11++/++ctrl+f12++ (++cmd+f11++/
-++cmd+f12++ on Mac) --- these increase cycles by 10% or decrease by 20%
+++cmd+f12++ on Mac) --- these decrease cycles by 20% or increase by 10%
 respectively. Once you land on a good setting, update your config with the
 value shown in the title bar.
 
@@ -624,8 +638,9 @@ that tells you the correct model for most well-known titles.
 
 Let's consult the list and see what it says about Beneath a Steel Sky!
 
-> Requires CM-series/LAPC-I for proper MT-32 output. Buffer overflows on
-> MT-32 'old'. Combined MT-32/SB output only possible using ScummVM
+> Buffer overflows on MT-32 'old'. Custom instrument patches use
+> CM-series/LAPC-I's extra sound effects. Combined MT-32/SB output requires
+> ScummVM or fanmade patch
 
 Well, the list knows best, so we'll use the CM-32L for our game (as we've done
 in the above config example).
@@ -678,22 +693,22 @@ and then pressing the left mouse button --- hey, where did the voice-over go?!
 Yeah... you've probably glossed over this little detail in the tip from the
 MT-32 wiki page:
 
-> Combined MT-32/SB output *only possible* using ScummVM
+> Combined MT-32/SB output **requires ScummVM or fanmade patch**
 { style="margin: 1.3rem 0" }
 
-What this means for us ordinary mortals is that the original game can either
-use the MT-32 for MIDI music and sound effects, and you get *no* digital
-speech, or only the Sound Blaster for OPL music, digital sound effects, *and*
-speech. MT-32 MIDI music and sound effects combined with digital
-speech via the Sound Blaster --- the computer says no, buddy.
+What this means for us ordinary mortals is that the original, unpatched game
+can either use the MT-32 for MIDI music and sound effects, and you get *no*
+digital speech, or only the Sound Blaster for OPL music, digital sound
+effects, *and* speech. MT-32 MIDI music and sound effects combined with
+digital speech via the Sound Blaster --- the computer says no, buddy.
 
-The game has just taught us an important life lesson: you can't have
-everything, especially not in the world of older DOS games. You'll have to
-pick what you value most: better music and only subtitles or full
-voice-acting with a slightly worse soundtrack. I'm opting for the latter, and
-remember, we can always enhance the Sound Blaster / AdLib music by adding
-chorus and reverb. This will get us a little bit closer to the MT-32
-soundtrack:
+For those who don't want to bother with fanmade patches, the game has just
+taught us an important life lesson: you can't have everything, especially not
+in the world of older DOS games. You'll have to pick what you value most:
+better music and only subtitles or full voice-acting with a slightly worse
+soundtrack. I'm opting for the latter, and remember, we can always enhance the
+Sound Blaster / AdLib music by adding chorus and reverb. This will get us a
+little bit closer to the MT-32 soundtrack:
 
 ```ini
 [mixer]
@@ -717,12 +732,20 @@ the patched game from the mounted CD with this command:
 
 ```
 d:
-c:\sky\skydrv cfg=c:\sky
+c:\sky\skydrv CFG=c:\sky
 ```
 
 Skip the intro and inspect the door again. Whoa, magic! MT-32 music _and_
 speech at the same time! Yikes! :sunglasses: Best put this into our
 `[autoexec]` section!
+
+!!! important
+
+    You *must* use uppercase `CFG=`! This is a quirk of the game --- the
+    game's code looks for the `CFG=` parameter in a case-sensitive manner and
+    will ignore lowercase `cfg=` (e.g., if you've configured the game for a
+    non-English language, using lowercase `cfg=` will _not_ load the
+    configuration and the game will revert to English subtitles).
 
 
 ## Aspect ratio correction
@@ -752,9 +775,8 @@ of the manual.
     width="90%"
 ) }}
 
-That's easy to fix; we'll also set the viewport resolution for roughly 4x
-integer scaling, since the game would look too blocky stretched to
-fullscreen:
+That's easy to fix; we'll also set the viewport resolution for 4x integer
+scaling, since the game would look too blocky stretched to fullscreen:
 
 ```ini
 [render]
@@ -778,9 +800,9 @@ in-game visuals --- fortunately, both were drawn assuming square pixels. The
 floppy disk icon, for instance, looks like a tallish rectangle with aspect
 correction enabled, when it should be a perfect square; human figures and
 circular objects appear slightly elongated too. Revolution was a European
-studio, released the game for PAL Amigas (which have square pixels), and was
-generally Amiga-first --- for such games, disabling aspect ratio correction
-is almost always correct.
+studio that released the game for PAL Amigas (which have square pixels), and
+was generally Amiga-first --- for such games, disabling aspect ratio
+correction is almost always correct.
 
 Rules of thumb:
 
@@ -894,7 +916,7 @@ viewport = 1280x800
 #shader = crt-auto-arcade
 
 [sblaster]
-sbmixer = off
+sbtype = sbpro2
 
 [midi]
 mididevice = mt32
@@ -911,7 +933,10 @@ chorus = strong
 
 # patched game (MT-32 music & SB speech/sfx)
 d:
-c:\sky\skydrv cfg=c:\sky
+
+# 'CFG=' must be uppercase! The game will ignore lowercase 'cfg='
+# (this is a quirk of the game, nothing to do with DOSBox Staging)
+c:\sky\skydrv CFG=c:\sky
 
 exit
 ```

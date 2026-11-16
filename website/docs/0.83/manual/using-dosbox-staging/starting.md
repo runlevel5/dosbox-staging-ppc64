@@ -22,6 +22,12 @@ directory](#the-working-directory), which underpins the recommended workflow.
 The remainder of this page then describes the platform-specific ways to launch
 DOSBox Staging with the correct working directory.
 
+!!! note "Note for non-English speakers"
+
+    DOSBox Staging defaults to English --- you'll get pointers on how to
+    change the interface language in the [Configuration](configuration.md)
+    section.
+
 
 ## The working directory
 
@@ -249,7 +255,7 @@ results --- you can simply press ++enter++ on it to launch the game.
 ### Apple Gatekeeper
 
 For releases before 0.81.0 and the [development snapshot
-builds](../../../releases/development-builds.md), you'll need to do the
+builds](../../../download/development-builds.md), you'll need to do the
 following when launching DOSBox Staging for the first time. Later releases are
 all notarized — they'll just work.
 

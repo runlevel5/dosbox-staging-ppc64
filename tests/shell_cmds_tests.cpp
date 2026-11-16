@@ -4,6 +4,7 @@
 #include "shell/shell.h"
 
 #include <string>
+#include <utility>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -16,9 +17,9 @@ namespace {
 
 using namespace testing;
 
-class DOS_Shell_CMDSTest : public DOSBoxTestFixture {};
+class DosShell_CMDSTest : public DOSBoxTestFixture {};
 
-class MockDOS_Shell : public DOS_Shell {
+class MockDosShell : public DosShell {
 public:
 	/**
 	 * NOTE: If we need to call the actual object, we use this. By
@@ -26,7 +27,7 @@ public:
 	 * (if given a .WillOnce(Return(...)), or a default value
 	 * (false).
 	 *
-	 * MockDOS_Shell()
+	 * MockDosShell()
 	 * {
 	 * 	// delegate call to the real object.
 	 * 	ON_CALL(*this, ExecuteShellCommand)
@@ -39,17 +40,27 @@ public:
 	MOCK_METHOD(bool, ExecuteShellCommand,
 	            (const char* const name, char* arguments), (override));
 
-//	MOCK_METHOD(void, WriteOut, (const char* format, const char* arguments),
-//	            (override));
+	void WriteToConsole(const std::string& str) override
+	{
+		output += str;
+	}
+
+	// Returns the console output written since the last call
+	std::string GetOutput()
+	{
+		return std::exchange(output, {});
+	}
 
 private:
-	DOS_Shell real_; // Keeps an instance of the real in the mock.
+	DosShell real_; // Keeps an instance of the real in the mock.
+
+	std::string output = {};
 };
 
 void assert_DoCommand(std::string input, std::string expected_name,
                       std::string expected_args)
 {
-	MockDOS_Shell shell;
+	MockDosShell shell;
 	auto input_c_str = const_cast<char*>(input.c_str());
 	EXPECT_CALL(shell,
 	            ExecuteShellCommand(StrEq(expected_name), StrEq(expected_args)))
@@ -59,7 +70,7 @@ void assert_DoCommand(std::string input, std::string expected_name,
 }
 
 // Tests chars that separate command name from arguments
-TEST_F(DOS_Shell_CMDSTest, DoCommand_Separating_Chars)
+TEST_F(DosShell_CMDSTest, DoCommand_Separating_Chars)
 {
 	// These should all cause the parser to stop
 	std::vector<char> end_chars{
@@ -70,7 +81,7 @@ TEST_F(DOS_Shell_CMDSTest, DoCommand_Separating_Chars)
 	        '"',
 	};
 	for (auto end_chr : end_chars) {
-		MockDOS_Shell shell;
+		MockDosShell shell;
 		std::string name  = "PATH";
 		std::string args  = "";
 		std::string input = name;
@@ -82,27 +93,27 @@ TEST_F(DOS_Shell_CMDSTest, DoCommand_Separating_Chars)
 	}
 }
 
-TEST_F(DOS_Shell_CMDSTest, DoCommand_All_Cmds_Do_Valid_Execute)
+TEST_F(DosShell_CMDSTest, DoCommand_All_Cmds_Do_Valid_Execute)
 {
-	MockDOS_Shell shell;
+	MockDosShell shell;
 	for (std::pair<std::string, SHELL_Cmd> cmd : shell_cmds) {
 		std::string input = cmd.first;
 		assert_DoCommand(input, input, "");
 	}
 }
 
-TEST_F(DOS_Shell_CMDSTest, DoCommand_Trim_Space)
+TEST_F(DosShell_CMDSTest, DoCommand_Trim_Space)
 {
 	assert_DoCommand(" PATH ", "PATH", "");
 }
 
-TEST_F(DOS_Shell_CMDSTest, DoCommand_Splits_Cmd_and_Args)
+TEST_F(DosShell_CMDSTest, DoCommand_Splits_Cmd_and_Args)
 {
 	// NOTE: It does not strip the arguments!
 	assert_DoCommand("DIR *.*", "DIR", " *.*");
 }
 
-TEST_F(DOS_Shell_CMDSTest, DoCommand_Doesnt_Split_Colon)
+TEST_F(DosShell_CMDSTest, DoCommand_Doesnt_Split_Colon)
 {
 	// ensure we don't split on colon ...
 	assert_DoCommand("C:", "C:", "");
@@ -110,72 +121,73 @@ TEST_F(DOS_Shell_CMDSTest, DoCommand_Doesnt_Split_Colon)
 	assert_DoCommand("C:\\", "C:", "\\");
 }
 
-TEST_F(DOS_Shell_CMDSTest, DoCommand_Nospace_Dot_Handling)
+TEST_F(DosShell_CMDSTest, DoCommand_Nospace_Dot_Handling)
 {
 	assert_DoCommand("DIR.EXE", "DIR", ".EXE");
 	assert_DoCommand("CD..", "CD", "..");
 	assert_DoCommand("CD....", "CD", "....");
 }
 
-TEST_F(DOS_Shell_CMDSTest, DoCommand_Nospace_Slash_Handling)
+TEST_F(DosShell_CMDSTest, DoCommand_Nospace_Slash_Handling)
 {
 	assert_DoCommand("CD\\DIRECTORY", "CD", "\\DIRECTORY");
 	assert_DoCommand("CD\\", "CD", "\\");
 }
 
-TEST_F(DOS_Shell_CMDSTest, DoCommand_Nospace_Echo_DoubleQuotes)
+TEST_F(DosShell_CMDSTest, DoCommand_Nospace_Echo_DoubleQuotes)
 {
 	assert_DoCommand("ECHO\"", "ECHO", "\"");
 	assert_DoCommand("ECHO\"\"", "ECHO", "\"\"");
 }
 
-TEST_F(DOS_Shell_CMDSTest, DoCommand_Nospace_If_DoubleQuotes)
+TEST_F(DosShell_CMDSTest, DoCommand_Nospace_If_DoubleQuotes)
 {
 	assert_DoCommand("IF\"1\"==\"1\"", "IF", "\"1\"==\"1\"");
 }
 
-TEST_F(DOS_Shell_CMDSTest, CMD_ECHO_off_on)
+TEST_F(DosShell_CMDSTest, CMD_ECHO_off_on)
 {
-	MockDOS_Shell shell;
+	MockDosShell shell;
 	EXPECT_TRUE(shell.echo); // should be the default
-//	EXPECT_CALL(shell, WriteOut(_, _)).Times(0);
+
 	EXPECT_NO_THROW({ shell.CMD_ECHO(const_cast<char*>("OFF")); });
 	EXPECT_FALSE(shell.echo);
 	EXPECT_NO_THROW({ shell.CMD_ECHO(const_cast<char*>("ON")); });
 	EXPECT_TRUE(shell.echo);
+	EXPECT_EQ(shell.GetOutput(), "");
 }
 
-TEST_F(DOS_Shell_CMDSTest, CMD_ECHO_space_handling)
+TEST_F(DosShell_CMDSTest, CMD_ECHO_space_handling)
 {
-	MockDOS_Shell shell;
+	MockDosShell shell;
 
 	EXPECT_TRUE(shell.echo);
-//	EXPECT_CALL(shell, WriteOut(_, StrEq("OFF "))).Times(1);
 	// this DOES NOT trigger ECHO OFF (trailing space causes it to not)
 	EXPECT_NO_THROW({ shell.CMD_ECHO(const_cast<char*>(" OFF ")); });
 	EXPECT_TRUE(shell.echo);
+	EXPECT_EQ(shell.GetOutput(), "OFF \r\n");
 
-//	EXPECT_CALL(shell, WriteOut(_, StrEq("FF "))).Times(1);
 	// this DOES NOT trigger ECHO OFF (initial 'O' gets stripped)
 	EXPECT_NO_THROW({ shell.CMD_ECHO(const_cast<char*>("OFF ")); });
 	EXPECT_TRUE(shell.echo);
+	EXPECT_EQ(shell.GetOutput(), "FF \r\n");
 
 	// no trailing space, echo off should work
-//	EXPECT_CALL(shell, WriteOut(_, _)).Times(0);
 	EXPECT_NO_THROW({ shell.CMD_ECHO(const_cast<char*>(" OFF")); });
 	// check that OFF worked properly, despite spaces
 	EXPECT_FALSE(shell.echo);
+	EXPECT_EQ(shell.GetOutput(), "");
 
 	// NOTE: the expected string here is missing the leading char of the
 	// input to ECHO. the first char is stripped as it's assumed it will be
 	// a space, period or slash.
-//	EXPECT_CALL(shell, WriteOut(_, StrEq("    HI "))).Times(1);
 	EXPECT_NO_THROW({ shell.CMD_ECHO(const_cast<char*>(".    HI ")); });
+	EXPECT_EQ(shell.GetOutput(), "    HI \r\n");
 }
 
-TEST_F(DOS_Shell_CMDSTest, CMD_FOR_basic)
+TEST_F(DosShell_CMDSTest, CMD_FOR_basic)
 {
-	MockDOS_Shell shell = {};
+	MockDosShell shell = {};
 
 	EXPECT_CALL(shell, ExecuteShellCommand(StrEq("ECHO"), StrEq(" ONE")))
 	        .Times(1)
@@ -188,9 +200,9 @@ TEST_F(DOS_Shell_CMDSTest, CMD_FOR_basic)
 	});
 }
 
-TEST_F(DOS_Shell_CMDSTest, CMD_FOR_delimiters)
+TEST_F(DosShell_CMDSTest, CMD_FOR_delimiters)
 {
-	MockDOS_Shell shell = {};
+	MockDosShell shell = {};
 
 	static constexpr auto delimeters = ",;= \t";
 	// TODO: C++20: Use std::format();
@@ -213,9 +225,9 @@ TEST_F(DOS_Shell_CMDSTest, CMD_FOR_delimiters)
 	EXPECT_NO_THROW({ shell.CMD_FOR(const_cast<char*>(input.c_str())); });
 }
 
-TEST_F(DOS_Shell_CMDSTest, CMD_FOR_missing_do)
+TEST_F(DosShell_CMDSTest, CMD_FOR_missing_do)
 {
-	MockDOS_Shell shell = {};
+	MockDosShell shell = {};
 
 	EXPECT_CALL(shell, ExecuteShellCommand(_, _)).Times(0);
 	EXPECT_NO_THROW({
@@ -223,9 +235,9 @@ TEST_F(DOS_Shell_CMDSTest, CMD_FOR_missing_do)
 	});
 }
 
-TEST_F(DOS_Shell_CMDSTest, CMD_FOR_missing_in)
+TEST_F(DosShell_CMDSTest, CMD_FOR_missing_in)
 {
-	MockDOS_Shell shell = {};
+	MockDosShell shell = {};
 
 	EXPECT_CALL(shell, ExecuteShellCommand(_, _)).Times(0);
 	EXPECT_NO_THROW({
@@ -233,9 +245,9 @@ TEST_F(DOS_Shell_CMDSTest, CMD_FOR_missing_in)
 	});
 }
 
-TEST_F(DOS_Shell_CMDSTest, CMD_FOR_missing_var)
+TEST_F(DosShell_CMDSTest, CMD_FOR_missing_var)
 {
-	MockDOS_Shell shell = {};
+	MockDosShell shell = {};
 
 	EXPECT_CALL(shell, ExecuteShellCommand(_, _)).Times(0);
 	EXPECT_NO_THROW({
@@ -243,9 +255,9 @@ TEST_F(DOS_Shell_CMDSTest, CMD_FOR_missing_var)
 	});
 }
 
-TEST_F(DOS_Shell_CMDSTest, CMD_FOR_missing_parens)
+TEST_F(DosShell_CMDSTest, CMD_FOR_missing_parens)
 {
-	MockDOS_Shell shell = {};
+	MockDosShell shell = {};
 
 	EXPECT_CALL(shell, ExecuteShellCommand(_, _)).Times(0);
 	EXPECT_NO_THROW({
@@ -253,24 +265,59 @@ TEST_F(DOS_Shell_CMDSTest, CMD_FOR_missing_parens)
 	});
 }
 
-TEST_F(DOS_Shell_CMDSTest, CMD_FOR_missing_command)
+TEST_F(DosShell_CMDSTest, CMD_FOR_missing_command)
 {
-	MockDOS_Shell shell = {};
+	MockDosShell shell = {};
 
 	EXPECT_CALL(shell, ExecuteShellCommand(_, _)).Times(0);
 	EXPECT_NO_THROW(
 	        { shell.CMD_FOR(const_cast<char*>(" %C IN (ONE TWO) DO")); });
 }
 
-TEST_F(DOS_Shell_CMDSTest, CMD_FOR_for_not_allowed)
+TEST_F(DosShell_CMDSTest, CMD_FOR_for_not_allowed)
 {
-	MockDOS_Shell shell = {};
+	MockDosShell shell = {};
 
 	EXPECT_CALL(shell, ExecuteShellCommand(_, _)).Times(0);
 	EXPECT_NO_THROW({
 		shell.CMD_FOR(const_cast<char*>(
 		        " %C IN (ONE TWO) DO FOR %D IN (THREE FOUR) DO ECHO %D"));
 	});
+}
+
+TEST_F(DosShell_CMDSTest, ExecuteProgram_Relative_Path_Without_Extension)
+{
+	VFILE_Register("AA.BAT", nullptr, 0, "");
+	auto& z_drive      = Drives.at(drive_index('Z'));
+	MockDosShell shell = {};
+
+	safe_strcpy(z_drive->curdir, "SUB");
+	EXPECT_TRUE(shell.ExecuteProgram("..\\AA.BAT", ""));
+	EXPECT_EQ(shell.GetOutput(), "");
+	EXPECT_TRUE(shell.ExecuteProgram("..\\AA", ""));
+	EXPECT_EQ(shell.GetOutput(), "");
+
+	safe_strcpy(z_drive->curdir, "SUB1\\SUB2");
+	EXPECT_TRUE(shell.ExecuteProgram("..\\..\\AA", ""));
+	EXPECT_EQ(shell.GetOutput(), "");
+
+	safe_strcpy(z_drive->curdir, "");
+	VFILE_Remove("AA.BAT");
+}
+
+TEST_F(DosShell_CMDSTest, ExecuteProgram_Prefers_Executable_Over_Extensionless_File)
+{
+	VFILE_Register("AB", nullptr, 0, "");
+	VFILE_Register("AB.BAT", nullptr, 0, "");
+	MockDosShell shell = {};
+
+	EXPECT_TRUE(shell.ExecuteProgram("AB", ""));
+	EXPECT_EQ(shell.GetOutput(), "");
+	EXPECT_TRUE(shell.ExecuteProgram("AB.BAT", ""));
+	EXPECT_EQ(shell.GetOutput(), "");
+
+	VFILE_Remove("AB.BAT");
+	VFILE_Remove("AB");
 }
 
 } // namespace
